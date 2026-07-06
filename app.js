@@ -424,8 +424,19 @@ const PhotoService = {
             createdAt: Date.now()
         };
         photos.unshift(newPhoto);
-        Store.set(STORAGE_KEYS.PHOTOS, photos);
+        try {
+            Store.set(STORAGE_KEYS.PHOTOS, photos);
+        } catch (e) {
+            console.error('照片存储失败，可能是存储空间不足:', e);
+            throw new Error('存储空间不足，请删除一些旧照片后重试');
+        }
         return newPhoto;
+    },
+
+    delete(photoId) {
+        const photos = Store.get(STORAGE_KEYS.PHOTOS, []);
+        const filtered = photos.filter(p => p.id !== photoId);
+        Store.set(STORAGE_KEYS.PHOTOS, filtered);
     }
 };
 
@@ -1078,7 +1089,15 @@ function showAddRouteModal() {
             </div>
             <div class="form-group">
                 <label>📷 出行照片（可选）</label>
-                <input type="file" id="routePhoto" accept="image/*" style="padding:10px;">
+                <div class="photo-upload-trigger" id="routePhotoTrigger" style="padding:20px;border:2px dashed #ddd;border-radius:12px;text-align:center;cursor:pointer;background:#fafafa;">
+                    <div style="font-size:32px;margin-bottom:8px;">📸</div>
+                    <div style="font-size:14px;color:#666;">点击选择照片</div>
+                    <div style="font-size:12px;color:#999;margin-top:4px;">支持从相册选择</div>
+                </div>
+                <input type="file" id="routePhoto" accept="image/*" style="display:none;">
+                <div id="routePhotoPreview" style="margin-top:8px;display:none;">
+                    <img id="routePhotoPreviewImg" style="width:100%;max-height:200px;object-fit:cover;border-radius:8px;">
+                </div>
                 <textarea id="routePhotoCaption" rows="2" placeholder="为这张照片写点什么..." style="margin-top:8px;"></textarea>
             </div>
             <button type="submit" class="btn btn-primary btn-block">上传路线</button>
@@ -1089,6 +1108,28 @@ function showAddRouteModal() {
     // 给地址输入框绑定模糊推荐
     attachAutocomplete(document.getElementById('routeStart'));
     attachAutocomplete(document.getElementById('routeEnd'));
+
+    // 点击触发选择文件
+    document.getElementById('routePhotoTrigger').addEventListener('click', () => {
+        document.getElementById('routePhoto').click();
+    });
+
+    // 照片预览
+    document.getElementById('routePhoto').addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        const preview = document.getElementById('routePhotoPreview');
+        const previewImg = document.getElementById('routePhotoPreviewImg');
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = function(ev) {
+                previewImg.src = ev.target.result;
+                preview.style.display = 'block';
+            };
+            reader.readAsDataURL(file);
+        } else {
+            preview.style.display = 'none';
+        }
+    });
 
     document.getElementById('addRouteForm').addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -1152,12 +1193,16 @@ function showAddRouteModal() {
 
             const photoFile = document.getElementById('routePhoto').files[0];
             if (photoFile) {
-                const caption = document.getElementById('routePhotoCaption').value.trim();
-                const photoDataUrl = await readFileAsDataURL(photoFile);
-                PhotoService.add({
-                    imageUrl: photoDataUrl,
-                    caption: caption || document.getElementById('routeTitle').value.trim()
-                });
+                try {
+                    const caption = document.getElementById('routePhotoCaption').value.trim();
+                    const photoDataUrl = await compressImage(photoFile);
+                    PhotoService.add({
+                        imageUrl: photoDataUrl,
+                        caption: caption || document.getElementById('routeTitle').value.trim()
+                    });
+                } catch (photoErr) {
+                    console.warn('照片处理失败:', photoErr);
+                }
             }
 
             hideModal();
@@ -1177,6 +1222,36 @@ function readFileAsDataURL(file) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = e => resolve(e.target.result);
+        reader.onerror = () => reject(new Error('文件读取失败'));
+        reader.readAsDataURL(file);
+    });
+}
+
+function compressImage(file, maxWidth = 1080, quality = 0.8) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const img = new Image();
+            img.onload = function() {
+                let width = img.width;
+                let height = img.height;
+
+                if (width > maxWidth) {
+                    height = Math.round((maxWidth / width) * height);
+                    width = maxWidth;
+                }
+
+                const canvas = document.createElement('canvas');
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, width, height);
+
+                resolve(canvas.toDataURL('image/jpeg', quality));
+            };
+            img.onerror = () => reject(new Error('图片加载失败'));
+            img.src = e.target.result;
+        };
         reader.onerror = () => reject(new Error('文件读取失败'));
         reader.readAsDataURL(file);
     });
@@ -1695,14 +1770,20 @@ function renderPhotos() {
 }
 
 function showPhotoDetail(photo) {
+    const user = Auth.getUser();
+    const isOwner = user && user.id === photo.userId;
+    
     const content = `
         <div style="margin-bottom:12px;">
-            <div style="display:flex;align-items:center;gap:10px;">
-                <div style="font-size:32px;">${photo.userAvatar}</div>
-                <div>
-                    <div style="font-weight:600;">${photo.userName}</div>
-                    <div style="font-size:12px;color:var(--text-light);">${formatTime(photo.createdAt)}</div>
+            <div style="display:flex;align-items:center;gap:10px;justify-content:space-between;">
+                <div style="display:flex;align-items:center;gap:10px;">
+                    <div style="font-size:32px;">${photo.userAvatar}</div>
+                    <div>
+                        <div style="font-weight:600;">${photo.userName}</div>
+                        <div style="font-size:12px;color:var(--text-light);">${formatTime(photo.createdAt)}</div>
+                    </div>
                 </div>
+                ${isOwner ? `<button id="deletePhotoBtn" style="padding:6px 12px;border:none;background:#fee;color:#e74c3c;border-radius:6px;font-size:13px;cursor:pointer;">删除</button>` : ''}
             </div>
         </div>
         <div style="border-radius:var(--radius);overflow:hidden;margin-bottom:12px;">
@@ -1711,6 +1792,18 @@ function showPhotoDetail(photo) {
         <p style="font-size:14px;line-height:1.6;">${photo.caption || ''}</p>
     `;
     showModal('照片详情', content);
+
+    if (isOwner) {
+        document.getElementById('deletePhotoBtn').addEventListener('click', () => {
+            if (confirm('确定要删除这张照片吗？')) {
+                PhotoService.delete(photo.id);
+                hideModal();
+                showToast('照片已删除');
+                renderPhotos();
+                updateProfileStats();
+            }
+        });
+    }
 }
 
 function showUploadPhotoModal() {
@@ -1718,21 +1811,52 @@ function showUploadPhotoModal() {
         <form id="uploadPhotoForm">
             <div class="form-group">
                 <label>选择图片</label>
-                <input type="file" id="photoFile" accept="image/*" style="padding:10px;">
+                <div class="photo-upload-trigger" id="photoTrigger" style="padding:30px;border:2px dashed #ddd;border-radius:12px;text-align:center;cursor:pointer;background:#fafafa;">
+                    <div style="font-size:48px;margin-bottom:12px;">📸</div>
+                    <div style="font-size:16px;color:#333;font-weight:500;">点击选择照片</div>
+                    <div style="font-size:13px;color:#999;margin-top:6px;">从相册选择或拍照</div>
+                </div>
+                <input type="file" id="photoFile" accept="image/*" style="display:none;">
+                <div id="photoPreview" style="margin-top:12px;display:none;">
+                    <img id="photoPreviewImg" style="width:100%;max-height:300px;object-fit:cover;border-radius:12px;">
+                </div>
             </div>
             <div class="form-group">
                 <label>说点什么</label>
                 <textarea id="photoCaption" rows="3" placeholder="分享这次出行的故事..."></textarea>
             </div>
-            <button type="submit" class="btn btn-primary btn-block">发布照片</button>
+            <button type="submit" class="btn btn-primary btn-block" id="photoSubmitBtn">发布照片</button>
         </form>
     `;
     showModal('上传照片', content);
 
-    document.getElementById('uploadPhotoForm').addEventListener('submit', (e) => {
+    // 点击触发选择文件
+    document.getElementById('photoTrigger').addEventListener('click', () => {
+        document.getElementById('photoFile').click();
+    });
+
+    // 图片预览
+    document.getElementById('photoFile').addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        const preview = document.getElementById('photoPreview');
+        const previewImg = document.getElementById('photoPreviewImg');
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = function(ev) {
+                previewImg.src = ev.target.result;
+                preview.style.display = 'block';
+            };
+            reader.readAsDataURL(file);
+        } else {
+            preview.style.display = 'none';
+        }
+    });
+
+    document.getElementById('uploadPhotoForm').addEventListener('submit', async (e) => {
         e.preventDefault();
         const fileInput = document.getElementById('photoFile');
         const caption = document.getElementById('photoCaption').value.trim();
+        const submitBtn = document.getElementById('photoSubmitBtn');
         const file = fileInput.files[0];
 
         if (!file) {
@@ -1740,18 +1864,24 @@ function showUploadPhotoModal() {
             return;
         }
 
-        const reader = new FileReader();
-        reader.onload = function(e) {
+        submitBtn.textContent = '处理中...';
+        submitBtn.disabled = true;
+
+        try {
+            const compressedDataUrl = await compressImage(file);
             PhotoService.add({
-                imageUrl: e.target.result,
+                imageUrl: compressedDataUrl,
                 caption: caption
             });
             hideModal();
             showToast('照片发布成功！');
             renderPhotos();
             updateProfileStats();
-        };
-        reader.readAsDataURL(file);
+        } catch (err) {
+            submitBtn.textContent = '发布照片';
+            submitBtn.disabled = false;
+            showToast('照片上传失败：' + (err.message || '请重试'));
+        }
     });
 }
 
