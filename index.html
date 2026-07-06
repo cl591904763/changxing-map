@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#2ecc71">
+    <title>畅行计划 - 无障碍出行地图</title>
+    <link rel="stylesheet" href="style.css">
+    <script>
+        // ============================================
+        // 高德地图 API Key 配置
+        // ============================================
+        // 获取地址：https://lbs.amap.com/dev/
+        // 步骤：注册高德开放平台 → 应用管理 → 创建新应用 → 类型选「Web端(JS API)」→ 复制Key和安全密钥
+        window.AMAP_KEY = 'e9b5a5d9e6d9e0d0b974b26ac64b0fc0';
+        // 2021年12月02日后申请的Key必须配合安全密钥使用
+        // 请在高德开放平台「应用管理」中找到该Key对应的安全密钥（securityJsCode）并填入下方
+        window.AMAP_SECRET = '0aec92a5447be86a982a184cc4145ab6';
+
+        // 安全密钥配置（必须在加载JS API之前设置）
+        if (window.AMAP_SECRET) {
+            window._AMapSecurityConfig = {
+                securityJsCode: window.AMAP_SECRET
+            };
+        }
+    </script>
+    <script src="https://webapi.amap.com/loader.js"></script>
+</head>
+<body>
+    <div id="app">
+        <header class="app-header" id="appHeader">
+            <h1 class="app-title">畅行计划</h1>
+            <div class="header-actions">
+                <span id="userBadge" class="user-badge hidden"></span>
+            </div>
+        </header>
+
+        <main class="app-main">
+            <section id="page-login" class="page active">
+                <div class="login-container">
+                    <div class="logo-section">
+                        <div class="logo-icon">♿</div>
+                        <h2 class="app-name">畅行计划</h2>
+                        <p class="app-slogan">让每一次出行，都畅行无阻</p>
+                    </div>
+                    
+                    <div class="auth-tabs">
+                        <button class="auth-tab active" data-tab="login">登录</button>
+                        <button class="auth-tab" data-tab="register">注册</button>
+                    </div>
+
+                    <form id="loginForm" class="auth-form active">
+                        <div class="form-group">
+                            <label for="loginUsername">用户名</label>
+                            <input type="text" id="loginUsername" placeholder="请输入用户名" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="loginPassword">密码</label>
+                            <input type="password" id="loginPassword" placeholder="请输入密码" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary btn-block">登录</button>
+                        <p class="auth-tip">还没有账号？<a href="#" id="switchToRegister">立即注册</a></p>
+                    </form>
+
+                    <form id="registerForm" class="auth-form">
+                        <div class="form-group">
+                            <label for="regUsername">用户名</label>
+                            <input type="text" id="regUsername" placeholder="请输入用户名" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="regPassword">密码</label>
+                            <input type="password" id="regPassword" placeholder="请输入密码（至少6位）" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="regNickname">昵称</label>
+                            <input type="text" id="regNickname" placeholder="给自己取个名字吧" required>
+                        </div>
+                        <div class="form-group">
+                            <label>身份类型</label>
+                            <div class="role-selector">
+                                <label class="role-option">
+                                    <input type="radio" name="role" value="disabled" checked>
+                                    <div class="role-card">
+                                        <div class="role-icon">🧑‍🦽</div>
+                                        <div class="role-name">需要出行</div>
+                                        <div class="role-desc">残障伙伴</div>
+                                    </div>
+                                </label>
+                                <label class="role-option">
+                                    <input type="radio" name="role" value="volunteer">
+                                    <div class="role-card">
+                                        <div class="role-icon">🤝</div>
+                                        <div class="role-name">志愿者</div>
+                                        <div class="role-desc">健全伙伴</div>
+                                    </div>
+                                </label>
+                            </div>
+                        </div>
+                        <div class="form-group" id="disabilityGroup" style="display:none;">
+                            <label for="regDisability">残疾类型</label>
+                            <select id="regDisability">
+                                <option value="">请选择</option>
+                                <option value="wheelchair">肢体残疾（轮椅使用者）</option>
+                                <option value="visual">视力障碍</option>
+                                <option value="hearing">听力障碍</option>
+                                <option value="intellectual">智力障碍</option>
+                                <option value="mental">精神障碍</option>
+                                <option value="other">其他</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="regPhone">联系电话</label>
+                            <input type="tel" id="regPhone" placeholder="方便联系的手机号">
+                        </div>
+                        <button type="submit" class="btn btn-primary btn-block">注册</button>
+                        <p class="auth-tip">已有账号？<a href="#" id="switchToLogin">去登录</a></p>
+                    </form>
+                </div>
+            </section>
+
+            <section id="page-map" class="page">
+                <div class="map-container">
+                    <div id="map" class="map-canvas"></div>
+                    <div class="map-overlay">
+                        <div class="map-stats">
+                            <span class="stat-item">
+                                <strong id="routeCount">0</strong>
+                                <small>条路线</small>
+                            </span>
+                            <span class="stat-divider"></span>
+                            <span class="stat-item">
+                                <strong id="districtCount">0</strong>
+                                <small>个区域</small>
+                            </span>
+                            <span class="stat-divider"></span>
+                            <span class="stat-item">
+                                <strong id="walkedKm">0</strong>
+                                <small>公里</small>
+                            </span>
+                        </div>
+                    </div>
+                    <button class="fab-btn" id="addRouteBtn" title="上传路线">
+                        <span>＋</span>
+                    </button>
+                </div>
+                <div class="route-list">
+                    <div class="section-header">
+                        <h3>无障碍路线</h3>
+                        <span class="section-sub">大家一起走过的路</span>
+                    </div>
+                    <div id="routeListContainer" class="route-cards">
+                    </div>
+                </div>
+            </section>
+
+            <section id="page-appointment" class="page">
+                <div class="appointment-header">
+                    <h2>出行搭子</h2>
+                    <p>预约志愿者，一起出行</p>
+                    <button class="btn btn-primary" id="createAppointmentBtn">发起预约</button>
+                </div>
+
+                <div class="tab-bar">
+                    <button class="mini-tab active" data-appt-tab="all">全部</button>
+                    <button class="mini-tab" data-appt-tab="mine">我的</button>
+                    <button class="mini-tab" data-appt-tab="volunteer">志愿者</button>
+                </div>
+
+                <div id="appointmentList" class="appointment-list">
+                </div>
+            </section>
+
+            <section id="page-photos" class="page">
+                <div class="photos-header">
+                    <h2>出行瞬间</h2>
+                    <p>记录每一次温暖的出行</p>
+                    <button class="btn btn-primary" id="uploadPhotoBtn">上传照片</button>
+                </div>
+                <div id="photoWall" class="photo-wall">
+                </div>
+            </section>
+
+            <section id="page-profile" class="page">
+                <div class="profile-header">
+                    <div class="avatar" id="profileAvatar">😊</div>
+                    <div class="profile-info">
+                        <h2 id="profileName">用户昵称</h2>
+                        <p id="profileRole">身份类型</p>
+                    </div>
+                </div>
+
+                <div class="profile-stats">
+                    <div class="profile-stat">
+                        <strong id="myRouteCount">0</strong>
+                        <span>条路线</span>
+                    </div>
+                    <div class="profile-stat">
+                        <strong id="myApptCount">0</strong>
+                        <span>次出行</span>
+                    </div>
+                    <div class="profile-stat">
+                        <strong id="myPhotoCount">0</strong>
+                        <span>张照片</span>
+                    </div>
+                </div>
+
+                <div class="menu-list">
+                    <div class="menu-item" id="menuMyRoutes">
+                        <span class="menu-icon">🗺️</span>
+                        <span class="menu-text">我的路线</span>
+                        <span class="menu-arrow">›</span>
+                    </div>
+                    <div class="menu-item" id="menuMyAppointments">
+                        <span class="menu-icon">📅</span>
+                        <span class="menu-text">我的预约</span>
+                        <span class="menu-arrow">›</span>
+                    </div>
+                    <div class="menu-item" id="menuMyPhotos">
+                        <span class="menu-icon">📷</span>
+                        <span class="menu-text">我的同行瞬间</span>
+                        <span class="menu-arrow">›</span>
+                    </div>
+                    <div class="menu-item" id="menuAbout">
+                        <span class="menu-icon">ℹ️</span>
+                        <span class="menu-text">关于畅行计划</span>
+                        <span class="menu-arrow">›</span>
+                    </div>
+                    <div class="menu-item menu-danger" id="logoutBtn">
+                        <span class="menu-icon">🚪</span>
+                        <span class="menu-text">退出登录</span>
+                        <span class="menu-arrow">›</span>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <nav class="bottom-nav" id="bottomNav">
+            <button class="nav-item active" data-page="map">
+                <span class="nav-icon">🗺️</span>
+                <span class="nav-label">地图</span>
+            </button>
+            <button class="nav-item" data-page="appointment">
+                <span class="nav-icon">🤝</span>
+                <span class="nav-label">搭子</span>
+            </button>
+            <button class="nav-item" data-page="photos">
+                    <span class="nav-icon">📸</span>
+                    <span class="nav-label">同行</span>
+                </button>
+            <button class="nav-item" data-page="profile">
+                <span class="nav-icon">👤</span>
+                <span class="nav-label">我的</span>
+            </button>
+        </nav>
+    </div>
+
+    <div id="modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modalTitle">标题</h3>
+                <button class="modal-close" id="modalClose">×</button>
+            </div>
+            <div class="modal-body" id="modalBody">
+            </div>
+        </div>
+    </div>
+
+    <div id="toast" class="toast hidden"></div>
+
+    <!-- 高德地图 JS API 通过 AMapLoader 加载 -->
+    <script>
+    window._amapReady = false;
+    window._amapError = null;
+
+    (function() {
+        var key = window.AMAP_KEY;
+        if (!key || key === 'YOUR_AMAP_KEY') {
+            window._amapError = '未配置API Key';
+            return;
+        }
+
+        // 使用官方 AMapLoader 加载
+        AMapLoader.load({
+            key: key,
+            version: "2.0",
+            plugins: ['AMap.Geocoder', 'AMap.DistrictSearch', 'AMap.ToolBar', 'AMap.Scale', 'AMap.Walking', 'AMap.PlaceSearch', 'AMap.AutoComplete']
+        }).then(function(AMap) {
+            window.AMap = AMap;
+            window._amapReady = true;
+            // 通知 app.js 地图已就绪
+            if (typeof onAMapLoaded === 'function') onAMapLoaded();
+        }).catch(function(e) {
+            window._amapError = e.message || '加载失败';
+            console.error('高德地图加载失败:', e);
+        });
+    })();
+    </script>
+    <script src="app.js"></script>
+</body>
+</html>
