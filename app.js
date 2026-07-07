@@ -1617,7 +1617,7 @@ function readFileAsDataURL(file) {
     });
 }
 
-function compressImage(file, maxWidth = 1080, quality = 0.8) {
+function compressImage(file, maxWidth = 800, quality = 0.6) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = function(e) {
@@ -2630,11 +2630,11 @@ async function updateProfileStats() {
             fillEl.style.background = '';
         }
         
-        let storageText = quota.usedKB + 'KB / 5MB';
+        let storageText = `基础数据: ${quota.usedKB}KB / 5MB`;
         if (quota.photoStats && quota.photoStats.size > 0) {
-            storageText += ' + 照片 ' + quota.photoStats.size + 'KB';
+            storageText += ` | 照片: ${quota.photoStats.size}KB`;
         }
-        storageText += ' (' + quota.usagePercent + '%)';
+        storageText += ` (${quota.usagePercent}%)`;
         textEl.textContent = storageText;
     }
 }
