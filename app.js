@@ -472,12 +472,24 @@ const MessageService = {
 
     getByAppointment(apptId) {
         const messages = Store.get(STORAGE_KEYS.MESSAGES, []);
+        const user = Auth.getUser();
+        const appts = Store.get(STORAGE_KEYS.APPOINTMENTS, []);
+        const appt = appts.find(a => a.id === apptId);
+        if (!appt) return [];
+        const isParticipant = appt.volunteerId === user.id || appt.requesterId === user.id;
+        if (!isParticipant) return [];
         return messages.filter(m => m.appointmentId === apptId).sort((a, b) => a.createdAt - b.createdAt);
     },
 
     send(apptId, content) {
         const messages = Store.get(STORAGE_KEYS.MESSAGES, []);
         const user = Auth.getUser();
+        const appts = Store.get(STORAGE_KEYS.APPOINTMENTS, []);
+        const appt = appts.find(a => a.id === apptId);
+        if (!appt) return null;
+        const isParticipant = appt.volunteerId === user.id || appt.requesterId === user.id;
+        if (!isParticipant) return null;
+        
         const newMsg = {
             id: 'm' + Date.now(),
             appointmentId: apptId,
@@ -1794,13 +1806,12 @@ function renderAppointments(tab = 'all') {
         if (appt.status === 'pending' && user.role === 'volunteer') {
             actionBtns.push(`<button class="btn btn-primary btn-sm" data-accept="${appt.id}">我来接单</button>`);
         }
-        if (appt.status === 'accepted') {
+        const isParticipant = appt.volunteerId === user.id || appt.requesterId === user.id;
+        if (appt.status === 'accepted' && isParticipant) {
             actionBtns.push(`<button class="btn btn-secondary btn-sm" data-chat="${appt.id}">💬 留言</button>`);
-            if (appt.volunteerId === user.id || appt.requesterId === user.id) {
-                actionBtns.push(`<button class="btn btn-secondary btn-sm" data-complete="${appt.id}">标记完成</button>`);
-            }
+            actionBtns.push(`<button class="btn btn-secondary btn-sm" data-complete="${appt.id}">标记完成</button>`);
         }
-        if (appt.status === 'completed') {
+        if (appt.status === 'completed' && isParticipant) {
             actionBtns.push(`<button class="btn btn-secondary btn-sm" data-chat="${appt.id}">💬 查看留言</button>`);
         }
 
@@ -1868,6 +1879,12 @@ function showChatModal(apptId) {
     if (!appt) return;
 
     const user = Auth.getUser();
+    const isParticipant = appt.volunteerId === user.id || appt.requesterId === user.id;
+    if (!isParticipant) {
+        showToast('只有预约双方可以留言沟通');
+        return;
+    }
+
     const otherUser = appt.requesterId === user.id 
         ? { name: appt.volunteerName, avatar: appt.volunteerAvatar }
         : { name: appt.requesterName, avatar: appt.requesterAvatar };
