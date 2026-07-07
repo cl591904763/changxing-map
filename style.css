@@ -33,6 +33,34 @@ body {
     line-height: 1.6;
     font-size: 16px;
     -webkit-font-smoothing: antialiased;
+    position: relative;
+    overflow-x: hidden;
+}
+
+body::before {
+    content: '';
+    position: fixed;
+    top: -100px;
+    right: -100px;
+    width: 300px;
+    height: 300px;
+    background: radial-gradient(circle, rgba(46, 204, 113, 0.08) 0%, transparent 70%);
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 0;
+}
+
+body::after {
+    content: '';
+    position: fixed;
+    bottom: 100px;
+    left: -80px;
+    width: 250px;
+    height: 250px;
+    background: radial-gradient(circle, rgba(52, 152, 219, 0.08) 0%, transparent 70%);
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 0;
 }
 
 button {
@@ -60,13 +88,16 @@ input, select, textarea {
     background: var(--bg);
     position: relative;
     padding-bottom: var(--nav-height);
+    z-index: 1;
 }
 
 .app-header {
     position: sticky;
     top: 0;
     z-index: 100;
-    background: var(--bg-white);
+    background: linear-gradient(135deg, rgba(255,255,255,0.95), rgba(255,255,255,0.9));
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
     height: var(--header-height);
     display: flex;
     align-items: center;
@@ -79,7 +110,10 @@ input, select, textarea {
 .app-title {
     font-size: 18px;
     font-weight: 600;
-    color: var(--primary);
+    background: linear-gradient(135deg, var(--primary), var(--secondary));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
 }
 
 .header-actions {
@@ -122,13 +156,16 @@ input, select, textarea {
     width: 100%;
     max-width: 480px;
     height: var(--nav-height);
-    background: var(--bg-white);
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
     display: flex;
     justify-content: space-around;
     align-items: center;
     border-top: 1px solid var(--border);
     z-index: 100;
     padding-bottom: env(safe-area-inset-bottom);
+    box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.06);
 }
 
 .nav-item {
@@ -140,15 +177,22 @@ input, select, textarea {
     justify-content: center;
     gap: 2px;
     color: var(--text-muted);
-    transition: color 0.2s;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
 }
 
 .nav-item.active {
     color: var(--primary);
+    transform: translateY(-2px);
+}
+
+.nav-item.active .nav-icon {
+    transform: scale(1.1);
 }
 
 .nav-icon {
     font-size: 22px;
+    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .nav-label {
@@ -161,11 +205,13 @@ input, select, textarea {
     border-radius: var(--radius);
     font-weight: 500;
     font-size: 15px;
-    transition: all 0.2s;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 6px;
+    position: relative;
+    overflow: hidden;
 }
 
 .btn:active {
@@ -173,12 +219,14 @@ input, select, textarea {
 }
 
 .btn-primary {
-    background: var(--primary);
+    background: linear-gradient(135deg, var(--primary), var(--primary-dark));
     color: white;
+    box-shadow: 0 2px 8px rgba(46, 204, 113, 0.3);
 }
 
 .btn-primary:active {
-    background: var(--primary-dark);
+    background: linear-gradient(135deg, var(--primary-dark), var(--primary-dark));
+    box-shadow: 0 1px 4px rgba(46, 204, 113, 0.2);
 }
 
 .btn-secondary {
@@ -213,17 +261,50 @@ input, select, textarea {
     text-align: center;
     margin-bottom: 32px;
     margin-top: 20px;
+    position: relative;
 }
 
 .logo-icon {
     font-size: 64px;
     margin-bottom: 16px;
+    display: inline-block;
+    animation: float 3s ease-in-out infinite;
+}
+
+@keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-8px); }
+}
+
+.logo-section::before {
+    content: '♿';
+    position: absolute;
+    top: -10px;
+    left: 10%;
+    font-size: 24px;
+    opacity: 0.15;
+    animation: float 4s ease-in-out infinite;
+    animation-delay: 0.5s;
+}
+
+.logo-section::after {
+    content: '🤝';
+    position: absolute;
+    top: 20px;
+    right: 8%;
+    font-size: 20px;
+    opacity: 0.15;
+    animation: float 3.5s ease-in-out infinite;
+    animation-delay: 1s;
 }
 
 .app-name {
     font-size: 28px;
     font-weight: 700;
-    color: var(--primary);
+    background: linear-gradient(135deg, var(--primary), var(--secondary));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
     margin-bottom: 8px;
 }
 
@@ -445,13 +526,28 @@ input, select, textarea {
 .section-header {
     margin-bottom: 12px;
     display: flex;
-    align-items: baseline;
+    align-items: center;
     gap: 10px;
+    position: relative;
 }
 
 .section-header h3 {
     font-size: 17px;
     font-weight: 600;
+    position: relative;
+    padding-left: 12px;
+}
+
+.section-header h3::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 4px;
+    height: 18px;
+    background: linear-gradient(180deg, var(--primary), var(--secondary));
+    border-radius: 2px;
 }
 
 .section-sub {
@@ -470,11 +566,25 @@ input, select, textarea {
     border-radius: var(--radius-lg);
     padding: 14px;
     box-shadow: var(--shadow);
-    transition: transform 0.2s;
+    transition: transform 0.2s, box-shadow 0.2s;
+    position: relative;
+    overflow: hidden;
+}
+
+.route-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 4px;
+    height: 100%;
+    background: linear-gradient(180deg, var(--primary), var(--secondary));
+    border-radius: 4px 0 0 4px;
 }
 
 .route-card:active {
     transform: scale(0.98);
+    box-shadow: 0 1px 6px rgba(0, 0, 0, 0.06);
 }
 
 .route-card-header {
@@ -537,6 +647,17 @@ input, select, textarea {
     padding: 20px 16px;
     background: linear-gradient(135deg, var(--primary), var(--primary-dark));
     color: white;
+    position: relative;
+    overflow: hidden;
+}
+
+.appointment-header::before {
+    content: '🤝';
+    position: absolute;
+    top: -20px;
+    right: 10px;
+    font-size: 100px;
+    opacity: 0.1;
 }
 
 .appointment-header h2 {
@@ -591,6 +712,24 @@ input, select, textarea {
     border-radius: var(--radius-lg);
     padding: 14px;
     box-shadow: var(--shadow);
+    position: relative;
+    overflow: hidden;
+    transition: transform 0.2s;
+}
+
+.appointment-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 4px;
+    height: 100%;
+    background: linear-gradient(180deg, var(--accent), var(--danger));
+    border-radius: 4px 0 0 4px;
+}
+
+.appointment-card:active {
+    transform: scale(0.99);
 }
 
 .appointment-card-header {
@@ -652,6 +791,17 @@ input, select, textarea {
     padding: 20px 16px;
     background: linear-gradient(135deg, #f39c12, #e67e22);
     color: white;
+    position: relative;
+    overflow: hidden;
+}
+
+.photos-header::before {
+    content: '📸';
+    position: absolute;
+    top: -15px;
+    right: 10px;
+    font-size: 90px;
+    opacity: 0.15;
 }
 
 .photos-header h2 {
@@ -716,6 +866,26 @@ input, select, textarea {
     align-items: center;
     gap: 16px;
     color: white;
+    position: relative;
+    overflow: hidden;
+}
+
+.profile-header::before {
+    content: '♿';
+    position: absolute;
+    top: -10px;
+    right: 20px;
+    font-size: 80px;
+    opacity: 0.1;
+}
+
+.profile-header::after {
+    content: '🤝';
+    position: absolute;
+    bottom: -20px;
+    right: 80px;
+    font-size: 60px;
+    opacity: 0.1;
 }
 
 .avatar {
@@ -728,6 +898,19 @@ input, select, textarea {
     justify-content: center;
     font-size: 36px;
     border: 3px solid rgba(255, 255, 255, 0.5);
+    cursor: pointer;
+    transition: transform 0.2s;
+    overflow: hidden;
+}
+
+.avatar:active {
+    transform: scale(0.95);
+}
+
+.avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
 }
 
 .profile-info h2 {
@@ -782,8 +965,9 @@ input, select, textarea {
     align-items: center;
     padding: 16px;
     border-bottom: 1px solid var(--border);
-    transition: background 0.15s;
+    transition: background 0.15s, transform 0.15s;
     cursor: pointer;
+    position: relative;
 }
 
 .menu-item:last-child {
@@ -792,6 +976,22 @@ input, select, textarea {
 
 .menu-item:active {
     background: var(--bg);
+    transform: scale(0.98);
+}
+
+.menu-item::after {
+    content: '';
+    position: absolute;
+    left: 16px;
+    right: 16px;
+    bottom: 0;
+    height: 1px;
+    background: var(--border);
+    opacity: 0.5;
+}
+
+.menu-item:last-child::after {
+    display: none;
 }
 
 .menu-icon {
@@ -913,11 +1113,23 @@ input, select, textarea {
 }
 
 .tag-wheelchair { background: #dbeafe; color: #2563eb; }
+.tag-limb-mild { background: #dbeafe; color: #2563eb; }
+.tag-limb-moderate { background: #bfdbfe; color: #1d4ed8; }
+.tag-limb-severe { background: #93c5fd; color: #1e40af; }
 .tag-visual { background: #fce7f3; color: #be185d; }
+.tag-visual-mild { background: #fce7f3; color: #be185d; }
+.tag-visual-severe { background: #fbcfe8; color: #9d174d; }
 .tag-hearing { background: #d1fae5; color: #047857; }
+.tag-hearing-mild { background: #d1fae5; color: #047857; }
+.tag-hearing-severe { background: #a7f3d0; color: #065f46; }
 .tag-intellectual { background: #ede9fe; color: #6d28d9; }
+.tag-intellectual-mild { background: #ede9fe; color: #6d28d9; }
+.tag-intellectual-severe { background: #ddd6fe; color: #5b21b6; }
 .tag-mental { background: #ffedd5; color: #c2410c; }
 .tag-other { background: #f3f4f6; color: #4b5563; }
+.tag-speech { background: #fef3c7; color: #b45309; }
+.tag-autism { background: #ccfbf1; color: #0f766e; }
+.tag-cerebral-palsy { background: #fae8ff; color: #a21caf; }
 
 #map .amap-mcall { font-family: inherit; }
 

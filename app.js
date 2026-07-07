@@ -1,5 +1,5 @@
 // ============================================
-// 畅行计划 - 无障碍出行地图 App
+// 畅行地图 - 无障碍出行地图 App
 // ============================================
 
 const STORAGE_KEYS = {
@@ -8,15 +8,27 @@ const STORAGE_KEYS = {
     ROUTES: 'changxing_routes',
     APPOINTMENTS: 'changxing_appointments',
     PHOTOS: 'changxing_photos',
+    MESSAGES: 'changxing_messages',
+    VERSION: 'changxing_version',
 };
 
+const APP_VERSION = '2.0'; // 新功能版本，更新后自动清除旧数据重新初始化
+
 const DISABILITY_TYPES = {
-    wheelchair: { name: '肢体残疾（轮椅）', tag: 'tag-wheelchair' },
-    visual: { name: '视力障碍', tag: 'tag-visual' },
-    hearing: { name: '听力障碍', tag: 'tag-hearing' },
-    intellectual: { name: '智力障碍', tag: 'tag-intellectual' },
-    mental: { name: '精神障碍', tag: 'tag-mental' },
-    other: { name: '其他', tag: 'tag-other' },
+    'limb-mild': { name: '肢体残疾（轻度）', tag: 'tag-limb-mild' },
+    'limb-moderate': { name: '肢体残疾（中度）', tag: 'tag-limb-moderate' },
+    'limb-severe': { name: '肢体残疾（重度-轮椅）', tag: 'tag-limb-severe' },
+    'visual-mild': { name: '视力障碍（低视力）', tag: 'tag-visual-mild' },
+    'visual-severe': { name: '视力障碍（全盲）', tag: 'tag-visual-severe' },
+    'hearing-mild': { name: '听力障碍（轻度）', tag: 'tag-hearing-mild' },
+    'hearing-severe': { name: '听力障碍（重度）', tag: 'tag-hearing-severe' },
+    'speech': { name: '言语障碍', tag: 'tag-speech' },
+    'intellectual-mild': { name: '智力障碍（轻度）', tag: 'tag-intellectual-mild' },
+    'intellectual-severe': { name: '智力障碍（重度）', tag: 'tag-intellectual-severe' },
+    'mental': { name: '精神障碍', tag: 'tag-mental' },
+    'autism': { name: '孤独症（自闭症）', tag: 'tag-autism' },
+    'cerebral-palsy': { name: '脑瘫', tag: 'tag-cerebral-palsy' },
+    'other': { name: '其他', tag: 'tag-other' },
 };
 
 const ROLE_NAMES = {
@@ -72,7 +84,7 @@ const Auth = {
                 password: '123456',
                 nickname: '小明',
                 role: 'disabled',
-                disabilityType: 'wheelchair',
+                disabilityType: 'limb-severe',
                 phone: '13800138001',
                 avatar: '🧑‍🦽',
                 createdAt: Date.now()
@@ -94,7 +106,7 @@ const Auth = {
                 password: '123456',
                 nickname: '红红',
                 role: 'disabled',
-                disabilityType: 'visual',
+                disabilityType: 'visual-severe',
                 phone: '13800138003',
                 avatar: '👩‍🦯',
                 createdAt: Date.now()
@@ -146,6 +158,19 @@ const Auth = {
     getUserById(id) {
         const users = Store.get(STORAGE_KEYS.USERS, []);
         return users.find(u => u.id === id);
+    },
+
+    updateProfile(userId, updates) {
+        const users = Store.get(STORAGE_KEYS.USERS, []);
+        const idx = users.findIndex(u => u.id === userId);
+        if (idx === -1) return null;
+        users[idx] = { ...users[idx], ...updates };
+        Store.set(STORAGE_KEYS.USERS, users);
+        if (this.currentUser && this.currentUser.id === userId) {
+            this.currentUser = users[idx];
+            Store.set(STORAGE_KEYS.CURRENT_USER, users[idx]);
+        }
+        return users[idx];
     }
 };
 
@@ -247,6 +272,19 @@ const RouteService = {
         return newRoute;
     },
 
+    update(routeId, routeData) {
+        const routes = Store.get(STORAGE_KEYS.ROUTES, []);
+        const idx = routes.findIndex(r => r.id === routeId);
+        if (idx === -1) return null;
+        routes[idx] = {
+            ...routes[idx],
+            ...routeData,
+            updatedAt: Date.now()
+        };
+        Store.set(STORAGE_KEYS.ROUTES, routes);
+        return routes[idx];
+    },
+
     delete(routeId) {
         const routes = Store.get(STORAGE_KEYS.ROUTES, []);
         const filtered = routes.filter(r => r.id !== routeId);
@@ -256,11 +294,9 @@ const RouteService = {
 
     getStats() {
         const routes = this.getAll();
-        const districts = new Set(routes.map(r => r.district).filter(Boolean));
         const totalKm = routes.reduce((sum, r) => sum + (r.distance || 0), 0);
         return {
             count: routes.length,
-            districts: districts.size,
             km: totalKm.toFixed(1)
         };
     }
@@ -286,7 +322,7 @@ const AppointmentService = {
                 route: '人民广场 - 南京路步行街',
                 date: '2026-07-08',
                 time: '10:00',
-                disabilityType: 'wheelchair',
+                disabilityType: 'limb-severe',
                 needDescription: '需要陪同逛南京路，帮忙推轮椅，午餐一起吃',
                 status: 'pending',
                 createdAt: Date.now() - 86400000 * 2
@@ -302,7 +338,7 @@ const AppointmentService = {
                 route: '陆家嘴地铁站 - 东方明珠',
                 date: '2026-07-05',
                 time: '14:00',
-                disabilityType: 'visual',
+                disabilityType: 'visual-severe',
                 needDescription: '视力障碍，需要引导参观东方明珠，帮忙描述景色',
                 status: 'completed',
                 createdAt: Date.now() - 86400000 * 5
@@ -318,7 +354,7 @@ const AppointmentService = {
                 route: '徐家汇 - 港汇恒隆广场',
                 date: '2026-07-10',
                 time: '11:00',
-                disabilityType: 'wheelchair',
+                disabilityType: 'limb-severe',
                 needDescription: '想去逛商场买东西，需要帮忙拿东西和推轮椅',
                 status: 'accepted',
                 createdAt: Date.now() - 86400000 * 1
@@ -382,6 +418,83 @@ const AppointmentService = {
         appts[idx].status = 'completed';
         Store.set(STORAGE_KEYS.APPOINTMENTS, appts);
         return appts[idx];
+    }
+};
+
+// ============================================
+// 留言消息模块
+// ============================================
+const MessageService = {
+    initDemoData() {
+        const messages = Store.get(STORAGE_KEYS.MESSAGES, []);
+        if (messages.length > 0) return;
+
+        const demoMessages = [
+            {
+                id: 'm1',
+                appointmentId: 'a3',
+                senderId: 'u1',
+                senderName: '小明',
+                senderAvatar: '🧑‍🦽',
+                content: '你好大志，明天我们几点在哪里见面呀？',
+                createdAt: Date.now() - 3600000 * 5
+            },
+            {
+                id: 'm2',
+                appointmentId: 'a3',
+                senderId: 'u2',
+                senderName: '大志',
+                senderAvatar: '🤝',
+                content: '你好小明，明天11点在徐家汇地铁站1号口见吧，那里有无障碍电梯很方便。',
+                createdAt: Date.now() - 3600000 * 4
+            },
+            {
+                id: 'm3',
+                appointmentId: 'a3',
+                senderId: 'u1',
+                senderName: '小明',
+                senderAvatar: '🧑‍🦽',
+                content: '好的，那我们明天见！需要我带什么东西吗？',
+                createdAt: Date.now() - 3600000 * 3
+            },
+            {
+                id: 'm4',
+                appointmentId: 'a3',
+                senderId: 'u2',
+                senderName: '大志',
+                senderAvatar: '🤝',
+                content: '不用啦，人来就行。我会带瓶水，路上注意安全。',
+                createdAt: Date.now() - 3600000 * 2
+            },
+        ];
+        Store.set(STORAGE_KEYS.MESSAGES, demoMessages);
+    },
+
+    getByAppointment(apptId) {
+        const messages = Store.get(STORAGE_KEYS.MESSAGES, []);
+        return messages.filter(m => m.appointmentId === apptId).sort((a, b) => a.createdAt - b.createdAt);
+    },
+
+    send(apptId, content) {
+        const messages = Store.get(STORAGE_KEYS.MESSAGES, []);
+        const user = Auth.getUser();
+        const newMsg = {
+            id: 'm' + Date.now(),
+            appointmentId: apptId,
+            senderId: user.id,
+            senderName: user.nickname,
+            senderAvatar: user.avatar,
+            content: content,
+            createdAt: Date.now()
+        };
+        messages.push(newMsg);
+        Store.set(STORAGE_KEYS.MESSAGES, messages);
+        return newMsg;
+    },
+
+    getUnreadCount(apptId, userId) {
+        const messages = this.getByAppointment(apptId);
+        return messages.filter(m => m.senderId !== userId).length;
     }
 };
 
@@ -737,7 +850,6 @@ const MapModule = {
     updateStats() {
         const stats = RouteService.getStats();
         document.getElementById('routeCount').textContent = stats.count;
-        document.getElementById('districtCount').textContent = stats.districts;
         document.getElementById('walkedKm').textContent = stats.km;
     }
 };
@@ -787,13 +899,13 @@ function showPage(pageId) {
     });
 
     const headerTitle = {
-        'login': '畅行计划',
+        'login': '畅行地图',
         'map': '无障碍地图',
         'appointment': '出行搭子',
         'photos': '出行瞬间',
         'profile': '个人中心'
     };
-    document.querySelector('.app-title').textContent = headerTitle[pageId] || '畅行计划';
+    document.querySelector('.app-title').textContent = headerTitle[pageId] || '畅行地图';
 
     const header = document.getElementById('appHeader');
     const bottomNav = document.getElementById('bottomNav');
@@ -871,7 +983,8 @@ function initAuthUI() {
     document.getElementById('loginForm').addEventListener('submit', (e) => {
         e.preventDefault();
         const username = document.getElementById('loginUsername').value.trim();
-        const password = document.getElementById('loginPassword').value;
+        const password = document.getElementById('loginPassword').value.trim();
+        console.log('登录尝试:', username, password.length);
         const result = Auth.login(username, password);
         if (result.success) {
             showToast('登录成功，欢迎回来！');
@@ -886,12 +999,13 @@ function initAuthUI() {
         const role = document.querySelector('input[name="role"]:checked').value;
         const userData = {
             username: document.getElementById('regUsername').value.trim(),
-            password: document.getElementById('regPassword').value,
+            password: document.getElementById('regPassword').value.trim(),
             nickname: document.getElementById('regNickname').value.trim(),
             role: role,
             disabilityType: role === 'disabled' ? document.getElementById('regDisability').value : '',
             phone: document.getElementById('regPhone').value.trim(),
         };
+        console.log('注册用户:', userData.username, userData.password.length);
         if (userData.password.length < 6) {
             showToast('密码至少6位');
             return;
@@ -973,6 +1087,11 @@ function showRouteDetail(routeId) {
         `).join('');
     }
 
+    const user = Auth.getUser();
+    console.log('当前用户:', user ? user.id : '未登录');
+    const isOwner = user && user.id === route.userId;
+    console.log('路线ID:', routeId, '路线发布者:', route.userId, '是否为所有者:', isOwner);
+
     const content = `
         <div style="margin-bottom:16px;">
             <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
@@ -1009,7 +1128,10 @@ function showRouteDetail(routeId) {
             <p style="font-size:13px;color:#92400e;line-height:1.6;">${route.tips || '暂无特别提示'}</p>
         </div>
         <button class="btn btn-primary btn-block" onclick="focusOnRoute('${route.id}');">📍 在地图上定位</button>
+        ${isOwner ? `
+        <button class="btn btn-block" style="margin-top:8px;color:#f39c12;border:1px solid #f39c12;background:white;" onclick="editRoute('${route.id}');">✏️ 修改路线</button>
         <button class="btn btn-block" style="margin-top:8px;color:#e74c3c;border:1px solid #e74c3c;background:white;" onclick="deleteRoute('${route.id}');">🗑 删除路线</button>
+        ` : ''}
     `;
     showModal('路线详情', content);
 }
@@ -1032,60 +1154,62 @@ function focusOnRoute(routeId) {
     }, 300);
 }
 
-function showAddRouteModal() {
+function editRoute(routeId) {
+    const route = RouteService.getAll().find(r => r.id === routeId);
+    if (!route) return;
+    showAddRouteModal(route);
+}
+
+function showAddRouteModal(editRoute = null) {
+    const isEdit = !!editRoute;
+    const title = isEdit ? '修改路线' : '上传路线';
+    const submitText = isEdit ? '保存修改' : '上传路线';
+    const waypoints = editRoute ? (editRoute.waypoints || []) : [];
+
+    const waypointHtml = waypoints.map((wp, i) => `
+        <div class="form-group waypoint-item" style="display:flex;gap:8px;align-items:center;">
+            <input type="text" class="waypoint-input addr-input" value="${wp}" placeholder="途经点${i + 1}，如：交通大学" autocomplete="off" style="flex:1;">
+            <button type="button" onclick="this.parentElement.remove();" style="flex-shrink:0;width:36px;height:36px;border:none;background:#fee;color:#e74c3c;border-radius:8px;font-size:16px;cursor:pointer;">×</button>
+        </div>
+    `).join('');
+
     const content = `
         <form id="addRouteForm">
             <div class="form-group">
                 <label>路线名称</label>
-                <input type="text" id="routeTitle" placeholder="给这条路线起个名字" required>
+                <input type="text" id="routeTitle" value="${isEdit ? editRoute.title : ''}" placeholder="给这条路线起个名字" required>
             </div>
             <div class="form-group">
                 <label>起点 <span style="font-size:11px;color:#999;">（输入后从推荐中选择）</span></label>
-                <input type="text" id="routeStart" class="addr-input" placeholder="输入地名，如：交通大学" required autocomplete="off">
+                <input type="text" id="routeStart" class="addr-input" value="${isEdit ? editRoute.startPoint : ''}" placeholder="输入地名，如：交通大学" required autocomplete="off">
             </div>
-            <div id="waypointList"></div>
+            <div id="waypointList">${waypointHtml}</div>
             <div class="form-group">
                 <button type="button" class="btn btn-block" style="border:1px dashed #2ecc71;color:#2ecc71;background:white;font-size:13px;" onclick="addWaypoint()">＋ 添加途经点</button>
             </div>
             <div class="form-group">
                 <label>终点 <span style="font-size:11px;color:#999;">（输入后从推荐中选择）</span></label>
-                <input type="text" id="routeEnd" class="addr-input" placeholder="输入地名，如：外滩观景台" required autocomplete="off">
+                <input type="text" id="routeEnd" class="addr-input" value="${isEdit ? editRoute.endPoint : ''}" placeholder="输入地名，如：外滩观景台" required autocomplete="off">
             </div>
             <div class="form-group">
-                <label>大致距离（公里）</label>
-                <input type="number" id="routeDistance" step="0.1" min="0.1" placeholder="例如：1.5" required>
-            </div>
-            <div class="form-group">
-                <label>所属区域 <span style="font-size:11px;color:#999;">（填完地址自动识别）</span></label>
-                <select id="routeDistrict">
-                    <option value="">自动识别中...</option>
-                    <option value="黄浦区">黄浦区</option>
-                    <option value="徐汇区">徐汇区</option>
-                    <option value="长宁区">长宁区</option>
-                    <option value="静安区">静安区</option>
-                    <option value="普陀区">普陀区</option>
-                    <option value="虹口区">虹口区</option>
-                    <option value="杨浦区">杨浦区</option>
-                    <option value="浦东新区">浦东新区</option>
-                    <option value="闵行区">闵行区</option>
-                    <option value="其他">其他</option>
-                </select>
+                <label>大致距离（公里） <span style="font-size:11px;color:#999;">（填完地址后自动计算）</span></label>
+                <input type="number" id="routeDistance" step="0.1" min="0.1" value="${isEdit ? editRoute.distance : ''}" placeholder="自动计算中..." readonly style="background:#f5f7fa;color:#666;">
             </div>
             <div class="form-group">
                 <label>难度</label>
                 <select id="routeDifficulty">
-                    <option value="easy">轻松 - 完全无障碍</option>
-                    <option value="medium">适中 - 有少量障碍</option>
-                    <option value="hard">挑战 - 需要帮助</option>
+                    <option value="easy" ${isEdit && editRoute.difficulty === 'easy' ? 'selected' : ''}>轻松 - 完全无障碍</option>
+                    <option value="medium" ${isEdit && editRoute.difficulty === 'medium' ? 'selected' : ''}>适中 - 有少量障碍</option>
+                    <option value="hard" ${isEdit && editRoute.difficulty === 'hard' ? 'selected' : ''}>挑战 - 需要帮助</option>
                 </select>
             </div>
             <div class="form-group">
                 <label>路线描述</label>
-                <textarea id="routeDesc" placeholder="描述一下路线的整体情况..." rows="3"></textarea>
+                <textarea id="routeDesc" placeholder="描述一下路线的整体情况..." rows="3">${isEdit ? editRoute.description || '' : ''}</textarea>
             </div>
             <div class="form-group">
                 <label>注意事项 / 贴士</label>
-                <textarea id="routeTips" placeholder="有什么需要注意的地方？比如哪里有坡道、哪里有卫生间..." rows="3"></textarea>
+                <textarea id="routeTips" placeholder="有什么需要注意的地方？比如哪里有坡道、哪里有卫生间..." rows="3">${isEdit ? editRoute.tips || '' : ''}</textarea>
             </div>
             <div class="form-group">
                 <label>📷 出行照片（可选）</label>
@@ -1098,16 +1222,17 @@ function showAddRouteModal() {
                 <div id="routePhotoPreview" style="margin-top:8px;display:none;">
                     <img id="routePhotoPreviewImg" style="width:100%;max-height:200px;object-fit:cover;border-radius:8px;">
                 </div>
-                <textarea id="routePhotoCaption" rows="2" placeholder="为这张照片写点什么..." style="margin-top:8px;"></textarea>
+                <textarea id="routePhotoCaption" rows="2" placeholder="为这张照片写点什么..." style="margin-top:8px;">${isEdit ? '' : ''}</textarea>
             </div>
-            <button type="submit" class="btn btn-primary btn-block">上传路线</button>
+            <button type="submit" class="btn btn-primary btn-block">${submitText}</button>
         </form>
     `;
-    showModal('上传路线', content);
+    showModal(title, content);
 
     // 给地址输入框绑定模糊推荐
     attachAutocomplete(document.getElementById('routeStart'));
     attachAutocomplete(document.getElementById('routeEnd'));
+    document.querySelectorAll('.waypoint-input').forEach(inp => attachAutocomplete(inp));
 
     // 点击触发选择文件
     document.getElementById('routePhotoTrigger').addEventListener('click', () => {
@@ -1135,7 +1260,6 @@ function showAddRouteModal() {
         e.preventDefault();
         const start = document.getElementById('routeStart').value.trim();
         const end = document.getElementById('routeEnd').value.trim();
-        let district = document.getElementById('routeDistrict').value;
         const submitBtn = e.target.querySelector('button[type="submit"]');
 
         const waypointInputs = document.querySelectorAll('.waypoint-input');
@@ -1153,43 +1277,37 @@ function showAddRouteModal() {
                 }))
             );
 
-            // 自动检测区域：取第一个成功结果的 district
-            let detectedDistrict = '';
-            for (const r of results) {
-                if (r && r[2]) { detectedDistrict = r[2]; break; }
-            }
-            if (!district && detectedDistrict) {
-                district = detectedDistrict;
-                const sel = document.getElementById('routeDistrict');
-                if (sel) {
-                    const opt = Array.from(sel.options).find(o => o.value === district);
-                    if (opt) sel.value = district;
-                    else sel.value = '其他';
-                }
-            }
-
             const allCoords = [];
             for (let i = 0; i < results.length; i++) {
                 if (results[i]) {
                     allCoords.push(toLatLng(results[i]));
                 } else {
-                    const center = getDistrictCenter(district || '其他');
-                    allCoords.push([center[0] + i * 0.001, center[1] + i * 0.001]);
+                    allCoords.push([31.2304 + i * 0.001, 121.4737 + i * 0.001]);
                 }
             }
 
-            RouteService.add({
+            // 使用快速估算方法计算距离（不等待API）
+            const distance = estimateDistance(allCoords);
+            // 实际步行距离会比直线距离长，乘以1.3系数
+            const distanceFixed = parseFloat((distance * 1.3).toFixed(1));
+
+            const routeData = {
                 title: document.getElementById('routeTitle').value.trim(),
                 startPoint: start,
                 endPoint: end,
                 waypoints: waypoints,
-                distance: parseFloat(document.getElementById('routeDistance').value),
-                district: district || '其他',
+                distance: distanceFixed,
                 difficulty: document.getElementById('routeDifficulty').value,
                 description: document.getElementById('routeDesc').value.trim(),
                 tips: document.getElementById('routeTips').value.trim(),
                 coordinates: allCoords
-            });
+            };
+
+            if (isEdit) {
+                RouteService.update(editRoute.id, routeData);
+            } else {
+                RouteService.add(routeData);
+            }
 
             const photoFile = document.getElementById('routePhoto').files[0];
             if (photoFile) {
@@ -1198,7 +1316,7 @@ function showAddRouteModal() {
                     const photoDataUrl = await compressImage(photoFile);
                     PhotoService.add({
                         imageUrl: photoDataUrl,
-                        caption: caption || document.getElementById('routeTitle').value.trim()
+                        caption: caption || routeData.title
                     });
                 } catch (photoErr) {
                     console.warn('照片处理失败:', photoErr);
@@ -1206,14 +1324,14 @@ function showAddRouteModal() {
             }
 
             hideModal();
-            showToast('路线上传成功！坐标已精确定位');
+            showToast((isEdit ? '路线修改成功！' : '路线上传成功！') + '距离约' + distanceFixed + '公里');
             renderRouteList();
             MapModule.loadRoutes();
             MapModule.updateStats();
         } catch (err) {
-            submitBtn.textContent = '上传路线';
+            submitBtn.textContent = submitText;
             submitBtn.disabled = false;
-            showToast('地理编码失败：' + (err.message || '请检查地址名称'));
+            showToast('操作失败：' + (err.message || '请检查地址名称'));
         }
     });
 }
@@ -1255,6 +1373,67 @@ function compressImage(file, maxWidth = 1080, quality = 0.8) {
         reader.onerror = () => reject(new Error('文件读取失败'));
         reader.readAsDataURL(file);
     });
+}
+
+function calculateRouteDistance(coords) {
+    return new Promise((resolve, reject) => {
+        if (!amapReady() || coords.length < 2) {
+            reject(new Error('地图未初始化或坐标不足'));
+            return;
+        }
+
+        try {
+            AMap.plugin(['AMap.Walking'], () => {
+                const walking = new AMap.Walking({
+                    map: null,
+                    panel: null
+                });
+
+                const origin = toLngLat(coords[0]);
+                const destination = toLngLat(coords[coords.length - 1]);
+
+                let opts = {
+                    origin: origin,
+                    destination: destination
+                };
+
+                if (coords.length > 2) {
+                    const waypoints = coords.slice(1, -1).map(c => toLngLat(c));
+                    opts.waypoints = waypoints;
+                }
+
+                walking.search(opts, (status, result) => {
+                    if (status === 'complete' && result.routes && result.routes.length > 0) {
+                        const route = result.routes[0];
+                        const distanceKm = (route.distance || 0) / 1000;
+                        resolve(distanceKm);
+                    } else {
+                        reject(new Error('路线规划失败'));
+                    }
+                });
+            });
+        } catch (e) {
+            reject(e);
+        }
+    });
+}
+
+function estimateDistance(coords) {
+    if (coords.length < 2) return 0;
+    let total = 0;
+    for (let i = 0; i < coords.length - 1; i++) {
+        const [lat1, lng1] = coords[i];
+        const [lat2, lng2] = coords[i + 1];
+        const R = 6371;
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        const dLng = (lng2 - lng1) * Math.PI / 180;
+        const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLng / 2) * Math.sin(dLng / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        total += R * c;
+    }
+    return total;
 }
 
 const DISTRICT_CENTERS = {
@@ -1611,12 +1790,21 @@ function renderAppointments(tab = 'all') {
         const disType = DISABILITY_TYPES[appt.disabilityType];
         const disabilityTag = disType ? `<span class="tag ${disType.tag}">${disType.name}</span>` : '';
 
-        let actionBtn = '';
+        let actionBtns = [];
         if (appt.status === 'pending' && user.role === 'volunteer') {
-            actionBtn = `<button class="btn btn-primary btn-sm" data-accept="${appt.id}">我来接单</button>`;
-        } else if (appt.status === 'accepted' && (appt.volunteerId === user.id || appt.requesterId === user.id)) {
-            actionBtn = `<button class="btn btn-secondary btn-sm" data-complete="${appt.id}">标记完成</button>`;
+            actionBtns.push(`<button class="btn btn-primary btn-sm" data-accept="${appt.id}">我来接单</button>`);
         }
+        if (appt.status === 'accepted') {
+            actionBtns.push(`<button class="btn btn-secondary btn-sm" data-chat="${appt.id}">💬 留言</button>`);
+            if (appt.volunteerId === user.id || appt.requesterId === user.id) {
+                actionBtns.push(`<button class="btn btn-secondary btn-sm" data-complete="${appt.id}">标记完成</button>`);
+            }
+        }
+        if (appt.status === 'completed') {
+            actionBtns.push(`<button class="btn btn-secondary btn-sm" data-chat="${appt.id}">💬 查看留言</button>`);
+        }
+
+        const actionBtnHtml = actionBtns.join('');
 
         return `
             <div class="appointment-card">
@@ -1646,7 +1834,7 @@ function renderAppointments(tab = 'all') {
                     </div>
                 </div>
                 <div class="appointment-actions">
-                    ${actionBtn}
+                    ${actionBtnHtml}
                 </div>
             </div>
         `;
@@ -1667,6 +1855,139 @@ function renderAppointments(tab = 'all') {
             renderAppointments(currentApptTab);
         });
     });
+
+    container.querySelectorAll('[data-chat]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            showChatModal(btn.dataset.chat);
+        });
+    });
+}
+
+function showChatModal(apptId) {
+    const appt = AppointmentService.getAll().find(a => a.id === apptId);
+    if (!appt) return;
+
+    const user = Auth.getUser();
+    const otherUser = appt.requesterId === user.id 
+        ? { name: appt.volunteerName, avatar: appt.volunteerAvatar }
+        : { name: appt.requesterName, avatar: appt.requesterAvatar };
+
+    const content = `
+        <div style="display:flex;flex-direction:column;height:65vh;">
+            <div style="display:flex;align-items:center;gap:10px;padding-bottom:12px;border-bottom:1px solid var(--border);margin-bottom:12px;">
+                <div style="width:40px;height:40px;border-radius:50%;background:var(--primary-light);display:flex;align-items:center;justify-content:center;font-size:20px;overflow:hidden;">
+                    ${otherUser.avatar && otherUser.avatar.startsWith && otherUser.avatar.startsWith('data:image') ? `<img src="${otherUser.avatar}" style="width:100%;height:100%;object-fit:cover;">` : otherUser.avatar}
+                </div>
+                <div>
+                    <div style="font-weight:600;font-size:15px;">${otherUser.name}</div>
+                    <div style="font-size:12px;color:var(--text-light);">${appt.route}</div>
+                </div>
+            </div>
+            <div id="chatMessages" style="flex:1;overflow-y:auto;padding:8px 0;display:flex;flex-direction:column;gap:12px;">
+            </div>
+            <div style="display:flex;gap:8px;padding-top:12px;border-top:1px solid var(--border);">
+                <input type="text" id="chatInput" placeholder="输入消息..." style="flex:1;padding:12px 16px;border:1.5px solid var(--border);border-radius:20px;font-size:14px;outline:none;" autocomplete="off">
+                <button id="chatSendBtn" style="width:44px;height:44px;border-radius:50%;background:var(--primary);color:white;border:none;cursor:pointer;font-size:18px;flex-shrink:0;">➤</button>
+            </div>
+        </div>
+    `;
+    showModal('出行沟通', content);
+
+    function renderMessages() {
+        const messages = MessageService.getByAppointment(apptId);
+        const container = document.getElementById('chatMessages');
+        if (!container) return;
+
+        if (messages.length === 0) {
+            container.innerHTML = `
+                <div style="text-align:center;padding:40px 20px;color:var(--text-light);">
+                    <div style="font-size:48px;margin-bottom:12px;">💬</div>
+                    <div style="font-size:14px;">还没有消息，开始聊天吧</div>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = messages.map(msg => {
+            const isMe = msg.senderId === user.id;
+            const avatarHtml = msg.senderAvatar && msg.senderAvatar.startsWith && msg.senderAvatar.startsWith('data:image')
+                ? `<img src="${msg.senderAvatar}" style="width:100%;height:100%;object-fit:cover;">`
+                : msg.senderAvatar;
+            
+            if (isMe) {
+                return `
+                    <div style="display:flex;justify-content:flex-end;gap:8px;align-items:flex-end;">
+                        <div style="max-width:75%;">
+                            <div style="background:var(--primary);color:white;padding:10px 14px;border-radius:16px 16px 4px 16px;font-size:14px;line-height:1.5;word-break:break-word;">
+                                ${msg.content}
+                            </div>
+                            <div style="text-align:right;font-size:11px;color:var(--text-muted);margin-top:4px;">
+                                ${formatChatTime(msg.createdAt)}
+                            </div>
+                        </div>
+                        <div style="width:32px;height:32px;border-radius:50%;background:var(--primary-light);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;overflow:hidden;">
+                            ${avatarHtml}
+                        </div>
+                    </div>
+                `;
+            } else {
+                return `
+                    <div style="display:flex;justify-content:flex-start;gap:8px;align-items:flex-end;">
+                        <div style="width:32px;height:32px;border-radius:50%;background:var(--primary-light);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;overflow:hidden;">
+                            ${avatarHtml}
+                        </div>
+                        <div style="max-width:75%;">
+                            <div style="background:white;border:1px solid var(--border);padding:10px 14px;border-radius:16px 16px 16px 4px;font-size:14px;line-height:1.5;word-break:break-word;">
+                                ${msg.content}
+                            </div>
+                            <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">
+                                ${formatChatTime(msg.createdAt)}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+        }).join('');
+
+        container.scrollTop = container.scrollHeight;
+    }
+
+    function sendMessage() {
+        const input = document.getElementById('chatInput');
+        const content = input.value.trim();
+        if (!content) return;
+
+        MessageService.send(apptId, content);
+        input.value = '';
+        renderMessages();
+    }
+
+    setTimeout(() => {
+        renderMessages();
+
+        document.getElementById('chatSendBtn').addEventListener('click', sendMessage);
+        document.getElementById('chatInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendMessage();
+        });
+    }, 50);
+}
+
+function formatChatTime(timestamp) {
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diff = now - date;
+    const days = Math.floor(diff / 86400000);
+    
+    const hours = date.getHours().toString().padStart(2, '0');
+    const mins = date.getMinutes().toString().padStart(2, '0');
+    
+    if (days === 0) {
+        return `今天 ${hours}:${mins}`;
+    } else if (days === 1) {
+        return `昨天 ${hours}:${mins}`;
+    } else {
+        return `${date.getMonth() + 1}/${date.getDate()} ${hours}:${mins}`;
+    }
 }
 
 function showCreateApptModal() {
@@ -1695,12 +2016,30 @@ function showCreateApptModal() {
             <div class="form-group">
                 <label>残疾类型</label>
                 <select id="apptDisability">
-                    <option value="wheelchair" ${user.disabilityType === 'wheelchair' ? 'selected' : ''}>肢体残疾（轮椅使用者）</option>
-                    <option value="visual" ${user.disabilityType === 'visual' ? 'selected' : ''}>视力障碍</option>
-                    <option value="hearing" ${user.disabilityType === 'hearing' ? 'selected' : ''}>听力障碍</option>
-                    <option value="intellectual" ${user.disabilityType === 'intellectual' ? 'selected' : ''}>智力障碍</option>
-                    <option value="mental" ${user.disabilityType === 'mental' ? 'selected' : ''}>精神障碍</option>
-                    <option value="other" ${user.disabilityType === 'other' ? 'selected' : ''}>其他</option>
+                    <optgroup label="肢体残疾">
+                        <option value="limb-mild" ${user.disabilityType === 'limb-mild' ? 'selected' : ''}>肢体残疾（轻度）</option>
+                        <option value="limb-moderate" ${user.disabilityType === 'limb-moderate' ? 'selected' : ''}>肢体残疾（中度）</option>
+                        <option value="limb-severe" ${user.disabilityType === 'limb-severe' ? 'selected' : ''}>肢体残疾（重度-轮椅）</option>
+                    </optgroup>
+                    <optgroup label="视力障碍">
+                        <option value="visual-mild" ${user.disabilityType === 'visual-mild' ? 'selected' : ''}>视力障碍（低视力）</option>
+                        <option value="visual-severe" ${user.disabilityType === 'visual-severe' ? 'selected' : ''}>视力障碍（全盲）</option>
+                    </optgroup>
+                    <optgroup label="听力障碍">
+                        <option value="hearing-mild" ${user.disabilityType === 'hearing-mild' ? 'selected' : ''}>听力障碍（轻度）</option>
+                        <option value="hearing-severe" ${user.disabilityType === 'hearing-severe' ? 'selected' : ''}>听力障碍（重度）</option>
+                    </optgroup>
+                    <optgroup label="智力与发育障碍">
+                        <option value="intellectual-mild" ${user.disabilityType === 'intellectual-mild' ? 'selected' : ''}>智力障碍（轻度）</option>
+                        <option value="intellectual-severe" ${user.disabilityType === 'intellectual-severe' ? 'selected' : ''}>智力障碍（重度）</option>
+                        <option value="cerebral-palsy" ${user.disabilityType === 'cerebral-palsy' ? 'selected' : ''}>脑瘫</option>
+                        <option value="autism" ${user.disabilityType === 'autism' ? 'selected' : ''}>孤独症（自闭症）</option>
+                    </optgroup>
+                    <optgroup label="其他">
+                        <option value="speech" ${user.disabilityType === 'speech' ? 'selected' : ''}>言语障碍</option>
+                        <option value="mental" ${user.disabilityType === 'mental' ? 'selected' : ''}>精神障碍</option>
+                        <option value="other" ${user.disabilityType === 'other' ? 'selected' : ''}>其他</option>
+                    </optgroup>
                 </select>
             </div>
             <div class="form-group">
@@ -1892,11 +2231,72 @@ function renderProfile() {
     const user = Auth.getUser();
     if (!user) return;
 
-    document.getElementById('profileAvatar').textContent = user.avatar;
+    const avatarEl = document.getElementById('profileAvatar');
+    if (user.avatar && user.avatar.startsWith && user.avatar.startsWith('data:image')) {
+        avatarEl.innerHTML = `<img src="${user.avatar}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`;
+    } else {
+        avatarEl.textContent = user.avatar;
+    }
     document.getElementById('profileName').textContent = user.nickname;
     document.getElementById('profileRole').textContent = ROLE_NAMES[user.role] || '用户';
 
     updateProfileStats();
+}
+
+function showAvatarUploadModal() {
+    const user = Auth.getUser();
+    if (!user) return;
+
+    const content = `
+        <div style="text-align:center;">
+            <div style="margin-bottom:16px;">
+                <div id="avatarPreview" style="width:100px;height:100px;border-radius:50%;margin:0 auto 16px;display:flex;align-items:center;justify-content:center;font-size:48px;background:var(--primary-light);overflow:hidden;border:3px solid var(--primary);">
+                    ${user.avatar && user.avatar.startsWith && user.avatar.startsWith('data:image') ? `<img src="${user.avatar}" style="width:100%;height:100%;object-fit:cover;">` : user.avatar}
+                </div>
+            </div>
+            <div class="form-group">
+                <div class="photo-upload-trigger" id="avatarTrigger" style="padding:20px;border:2px dashed #2ecc71;border-radius:12px;text-align:center;cursor:pointer;background:#f0fdf4;">
+                    <div style="font-size:32px;margin-bottom:8px;">📷</div>
+                    <div style="font-size:14px;color:#2ecc71;font-weight:500;">选择头像照片</div>
+                    <div style="font-size:12px;color:#999;margin-top:4px;">从相册选择或拍照</div>
+                </div>
+                <input type="file" id="avatarFile" accept="image/*" style="display:none;">
+            </div>
+            <button id="saveAvatarBtn" class="btn btn-primary btn-block" disabled style="opacity:0.5;">保存头像</button>
+        </div>
+    `;
+    showModal('修改头像', content);
+
+    let newAvatarData = null;
+
+    document.getElementById('avatarTrigger').addEventListener('click', () => {
+        document.getElementById('avatarFile').click();
+    });
+
+    document.getElementById('avatarFile').addEventListener('change', async function(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        try {
+            const compressed = await compressImage(file, 300, 0.9);
+            newAvatarData = compressed;
+            const preview = document.getElementById('avatarPreview');
+            preview.innerHTML = `<img src="${compressed}" style="width:100%;height:100%;object-fit:cover;">`;
+            const saveBtn = document.getElementById('saveAvatarBtn');
+            saveBtn.disabled = false;
+            saveBtn.style.opacity = '1';
+        } catch (err) {
+            showToast('图片处理失败');
+        }
+    });
+
+    document.getElementById('saveAvatarBtn').addEventListener('click', () => {
+        if (!newAvatarData) return;
+        Auth.updateProfile(user.id, { avatar: newAvatarData });
+        hideModal();
+        showToast('头像修改成功！');
+        renderProfile();
+    });
 }
 
 function updateProfileStats() {
@@ -1916,10 +2316,31 @@ function updateProfileStats() {
 // 初始化
 // ============================================
 function initApp() {
+    const savedVersion = Store.get(STORAGE_KEYS.VERSION, '');
+    if (savedVersion !== APP_VERSION) {
+        console.log('版本更新，更新数据结构...', savedVersion, '->', APP_VERSION);
+        const users = Store.get(STORAGE_KEYS.USERS, []);
+        const currentUser = Store.get(STORAGE_KEYS.CURRENT_USER);
+        
+        Store.remove(STORAGE_KEYS.ROUTES);
+        Store.remove(STORAGE_KEYS.APPOINTMENTS);
+        Store.remove(STORAGE_KEYS.PHOTOS);
+        Store.remove(STORAGE_KEYS.MESSAGES);
+        
+        if (users.length > 0) {
+            Store.set(STORAGE_KEYS.USERS, users);
+        }
+        if (currentUser) {
+            Store.set(STORAGE_KEYS.CURRENT_USER, currentUser);
+        }
+        Store.set(STORAGE_KEYS.VERSION, APP_VERSION);
+    }
+
     Auth.init();
     RouteService.initDemoData();
     AppointmentService.initDemoData();
     PhotoService.initDemoData();
+    MessageService.initDemoData();
 
     initAuthUI();
 
@@ -1966,6 +2387,10 @@ function initApp() {
     document.getElementById('menuMyRoutes').addEventListener('click', () => {
         showToast('查看我的路线');
     });
+    document.getElementById('profileAvatar').addEventListener('click', () => {
+        if (!Auth.isLoggedIn()) return;
+        showAvatarUploadModal();
+    });
     document.getElementById('menuMyAppointments').addEventListener('click', () => {
         showPage('appointment');
         renderAppointments('mine');
@@ -1974,10 +2399,10 @@ function initApp() {
         showToast('查看我的照片');
     });
     document.getElementById('menuAbout').addEventListener('click', () => {
-        showModal('关于畅行计划', `
+        showModal('关于畅行地图', `
             <div style="text-align:center;padding:20px 0;">
                 <div style="font-size:48px;margin-bottom:12px;">♿</div>
-                <h3 style="margin-bottom:8px;">畅行计划</h3>
+                <h3 style="margin-bottom:8px;">畅行地图</h3>
                 <p style="color:var(--text-light);font-size:14px;margin-bottom:16px;line-height:1.8;">
                     我们致力于为残障群体打造无障碍出行地图，<br>
                     记录每一条走过的路，点亮上海的每一个角落。<br>

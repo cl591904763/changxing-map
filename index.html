@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="theme-color" content="#2ecc71">
-    <title>畅行计划 - 无障碍出行地图</title>
+    <title>畅行地图 - 无障碍出行地图</title>
     <link rel="stylesheet" href="style.css">
     <script>
         // ============================================
@@ -29,7 +29,7 @@
 <body>
     <div id="app">
         <header class="app-header" id="appHeader">
-            <h1 class="app-title">畅行计划</h1>
+            <h1 class="app-title">畅行地图</h1>
             <div class="header-actions">
                 <span id="userBadge" class="user-badge hidden"></span>
             </div>
@@ -40,7 +40,7 @@
                 <div class="login-container">
                     <div class="logo-section">
                         <div class="logo-icon">♿</div>
-                        <h2 class="app-name">畅行计划</h2>
+                        <h2 class="app-name">畅行地图</h2>
                         <p class="app-slogan">让每一次出行，都畅行无阻</p>
                     </div>
                     
@@ -100,12 +100,30 @@
                             <label for="regDisability">残疾类型</label>
                             <select id="regDisability">
                                 <option value="">请选择</option>
-                                <option value="wheelchair">肢体残疾（轮椅使用者）</option>
-                                <option value="visual">视力障碍</option>
-                                <option value="hearing">听力障碍</option>
-                                <option value="intellectual">智力障碍</option>
-                                <option value="mental">精神障碍</option>
-                                <option value="other">其他</option>
+                                <optgroup label="肢体残疾">
+                                    <option value="limb-mild">肢体残疾（轻度）</option>
+                                    <option value="limb-moderate">肢体残疾（中度）</option>
+                                    <option value="limb-severe">肢体残疾（重度-轮椅）</option>
+                                </optgroup>
+                                <optgroup label="视力障碍">
+                                    <option value="visual-mild">视力障碍（低视力）</option>
+                                    <option value="visual-severe">视力障碍（全盲）</option>
+                                </optgroup>
+                                <optgroup label="听力障碍">
+                                    <option value="hearing-mild">听力障碍（轻度）</option>
+                                    <option value="hearing-severe">听力障碍（重度）</option>
+                                </optgroup>
+                                <optgroup label="智力与发育障碍">
+                                    <option value="intellectual-mild">智力障碍（轻度）</option>
+                                    <option value="intellectual-severe">智力障碍（重度）</option>
+                                    <option value="cerebral-palsy">脑瘫</option>
+                                    <option value="autism">孤独症（自闭症）</option>
+                                </optgroup>
+                                <optgroup label="其他">
+                                    <option value="speech">言语障碍</option>
+                                    <option value="mental">精神障碍</option>
+                                    <option value="other">其他</option>
+                                </optgroup>
                             </select>
                         </div>
                         <div class="form-group">
@@ -126,11 +144,6 @@
                             <span class="stat-item">
                                 <strong id="routeCount">0</strong>
                                 <small>条路线</small>
-                            </span>
-                            <span class="stat-divider"></span>
-                            <span class="stat-item">
-                                <strong id="districtCount">0</strong>
-                                <small>个区域</small>
                             </span>
                             <span class="stat-divider"></span>
                             <span class="stat-item">
@@ -222,7 +235,7 @@
                     </div>
                     <div class="menu-item" id="menuAbout">
                         <span class="menu-icon">ℹ️</span>
-                        <span class="menu-text">关于畅行计划</span>
+                        <span class="menu-text">关于畅行地图</span>
                         <span class="menu-arrow">›</span>
                     </div>
                     <div class="menu-item menu-danger" id="logoutBtn">
