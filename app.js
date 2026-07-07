@@ -10,9 +10,12 @@ const STORAGE_KEYS = {
     PHOTOS: 'changxing_photos',
     MESSAGES: 'changxing_messages',
     VERSION: 'changxing_version',
+    BACKUP_PREFIX: 'changxing_backup_',
 };
 
-const APP_VERSION = '2.1'; // 新功能版本，更新后自动清除旧数据重新初始化
+const BACKUP_KEYS = ['USERS', 'ROUTES', 'APPOINTMENTS', 'PHOTOS', 'MESSAGES', 'CURRENT_USER'];
+
+const APP_VERSION = '2.2';
 
 const DISABILITY_TYPES = {
     'limb-mild': { name: '肢体残疾（轻度）', tag: 'tag-limb-mild' },
@@ -45,20 +48,99 @@ const Store = {
             const data = localStorage.getItem(key);
             return data ? JSON.parse(data) : defaultValue;
         } catch (e) {
+            console.warn('Store.get 解析失败，尝试从备份恢复:', key, e);
+            const backup = this.getBackup(key);
+            if (backup !== null) {
+                console.log('从备份恢复成功:', key);
+                return backup;
+            }
             return defaultValue;
         }
     },
+
+    getRaw(key) {
+        return localStorage.getItem(key);
+    },
+
     set(key, value) {
         try {
+            this.setBackup(key);
             localStorage.setItem(key, JSON.stringify(value));
             return true;
         } catch (e) {
-            console.error('存储失败:', e);
+            console.error('存储失败:', key, e);
+            if (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED') {
+                if (typeof showToast === 'function') {
+                    showToast('存储空间已满！请清理一些照片或路线后再试');
+                }
+            }
             return false;
         }
     },
+
     remove(key) {
+        this.setBackup(key);
         localStorage.removeItem(key);
+    },
+
+    setBackup(key) {
+        try {
+            const raw = localStorage.getItem(key);
+            if (raw) {
+                const backupKey = STORAGE_KEYS.BACKUP_PREFIX + key;
+                localStorage.setItem(backupKey, raw);
+            }
+        } catch (e) {
+            console.warn('备份失败:', key, e);
+        }
+    },
+
+    getBackup(key) {
+        try {
+            const backupKey = STORAGE_KEYS.BACKUP_PREFIX + key;
+            const raw = localStorage.getItem(backupKey);
+            return raw ? JSON.parse(raw) : null;
+        } catch (e) {
+            console.warn('备份读取失败:', key, e);
+            return null;
+        }
+    },
+
+    restoreFromBackup(key) {
+        try {
+            const backupKey = STORAGE_KEYS.BACKUP_PREFIX + key;
+            const raw = localStorage.getItem(backupKey);
+            if (raw) {
+                localStorage.setItem(key, raw);
+                console.log('已从备份恢复:', key);
+                return true;
+            }
+        } catch (e) {
+            console.error('恢复备份失败:', key, e);
+        }
+        return false;
+    },
+
+    checkAndRepair() {
+        let repaired = 0;
+        BACKUP_KEYS.forEach(keyName => {
+            const key = STORAGE_KEYS[keyName];
+            try {
+                const raw = localStorage.getItem(key);
+                if (raw) {
+                    JSON.parse(raw);
+                }
+            } catch (e) {
+                console.warn('数据损坏，尝试恢复:', key);
+                if (this.restoreFromBackup(key)) {
+                    repaired++;
+                }
+            }
+        });
+        if (repaired > 0) {
+            console.log('修复了', repaired, '个损坏的数据项');
+        }
+        return repaired;
     }
 };
 
@@ -72,6 +154,19 @@ const Auth = {
         this.currentUser = Store.get(STORAGE_KEYS.CURRENT_USER);
         const users = Store.get(STORAGE_KEYS.USERS, []);
         if (users.length === 0) {
+            const rawUsers = Store.getRaw(STORAGE_KEYS.USERS);
+            const hasBackup = Store.getBackup(STORAGE_KEYS.USERS) !== null;
+            if (rawUsers || hasBackup) {
+                console.warn('用户数据可能损坏，原始数据存在但解析失败');
+                if (hasBackup) {
+                    Store.restoreFromBackup(STORAGE_KEYS.USERS);
+                    const restoredUsers = Store.get(STORAGE_KEYS.USERS, []);
+                    if (restoredUsers.length > 0) {
+                        console.log('从备份恢复了用户数据:', restoredUsers.length);
+                        return;
+                    }
+                }
+            }
             this._createDemoUsers();
         }
     },
@@ -117,6 +212,7 @@ const Auth = {
 
     register(userData) {
         const users = Store.get(STORAGE_KEYS.USERS, []);
+        console.log('注册-当前用户数:', users.length);
         if (users.find(u => u.username === userData.username)) {
             return { success: false, message: '用户名已存在' };
         }
@@ -127,18 +223,34 @@ const Auth = {
             createdAt: Date.now()
         };
         users.push(newUser);
-        Store.set(STORAGE_KEYS.USERS, users);
-        return { success: true, user: newUser };
+        const saved = Store.set(STORAGE_KEYS.USERS, users);
+        console.log('注册-保存结果:', saved, '新用户:', newUser.username, newUser.id);
+        checkStorageQuota();
+        return { success: saved, user: newUser, message: saved ? '注册成功' : '注册失败，存储空间不足' };
     },
 
     login(username, password) {
         const users = Store.get(STORAGE_KEYS.USERS, []);
+        console.log('登录-当前用户数:', users.length, '尝试登录:', username);
         const user = users.find(u => u.username === username && u.password === password);
         if (!user) {
-            return { success: false, message: '用户名或密码错误' };
+            const userExists = users.find(u => u.username === username);
+            if (userExists) {
+                console.log('登录失败: 密码错误');
+                return { success: false, message: '密码错误，请重试', errorType: 'wrong_password' };
+            } else {
+                console.log('登录失败: 用户不存在');
+                const hasBackup = Store.getBackup(STORAGE_KEYS.USERS) !== null;
+                let msg = '用户不存在，请先注册';
+                if (users.length === 0 && hasBackup) {
+                    msg = '用户数据可能丢失了，请尝试刷新页面恢复';
+                }
+                return { success: false, message: msg, errorType: 'user_not_found' };
+            }
         }
         this.currentUser = user;
         Store.set(STORAGE_KEYS.CURRENT_USER, user);
+        console.log('登录成功:', user.username);
         return { success: true, user };
     },
 
@@ -2327,31 +2439,110 @@ function updateProfileStats() {
     document.getElementById('myRouteCount').textContent = myRoutes.length;
     document.getElementById('myApptCount').textContent = myAppts.length;
     document.getElementById('myPhotoCount').textContent = myPhotos.length;
+
+    const quota = checkStorageQuota();
+    const fillEl = document.getElementById('storageFill');
+    const textEl = document.getElementById('storageText');
+    if (fillEl && textEl) {
+        fillEl.style.width = Math.min(quota.usagePercent, 100) + '%';
+        if (quota.usagePercent > 80) {
+            fillEl.style.background = 'linear-gradient(90deg, #ff6b6b, #ee5a5a)';
+        } else {
+            fillEl.style.background = '';
+        }
+        textEl.textContent = quota.usedKB + 'KB / ' + (quota.limitKB / 1000) + 'MB (' + quota.usagePercent + '%)';
+    }
+}
+
+// ============================================
+// 数据迁移与存储保护
+// ============================================
+function migrateData(oldVersion, newVersion) {
+    console.log('数据迁移:', oldVersion || '(无版本)', '->', newVersion);
+    try {
+        const users = Store.get(STORAGE_KEYS.USERS, []);
+        const routes = Store.get(STORAGE_KEYS.ROUTES, []);
+        const appts = Store.get(STORAGE_KEYS.APPOINTMENTS, []);
+        const photos = Store.get(STORAGE_KEYS.PHOTOS, []);
+        const messages = Store.get(STORAGE_KEYS.MESSAGES, []);
+        const currentUser = Store.get(STORAGE_KEYS.CURRENT_USER);
+
+        console.log('迁移前数据统计 - 用户:', users.length, '路线:', routes.length, '预约:', appts.length, '照片:', photos.length, '消息:', messages.length);
+
+        BACKUP_KEYS.forEach(keyName => {
+            const key = STORAGE_KEYS[keyName];
+            Store.setBackup(key);
+        });
+
+        if (users.length > 0) Store.set(STORAGE_KEYS.USERS, users);
+        if (routes.length > 0) Store.set(STORAGE_KEYS.ROUTES, routes);
+        if (appts.length > 0) Store.set(STORAGE_KEYS.APPOINTMENTS, appts);
+        if (photos.length > 0) Store.set(STORAGE_KEYS.PHOTOS, photos);
+        if (messages.length > 0) Store.set(STORAGE_KEYS.MESSAGES, messages);
+        if (currentUser) Store.set(STORAGE_KEYS.CURRENT_USER, currentUser);
+
+        console.log('数据迁移完成，保留用户:', users.length, '路线:', routes.length);
+    } catch (e) {
+        console.error('数据迁移出错:', e);
+        BACKUP_KEYS.forEach(keyName => {
+            const key = STORAGE_KEYS[keyName];
+            Store.restoreFromBackup(key);
+        });
+        console.log('已从迁移前备份恢复数据');
+    }
+}
+
+function checkStorageQuota() {
+    try {
+        let total = 0;
+        for (let key in localStorage) {
+            if (localStorage.hasOwnProperty(key)) {
+                total += localStorage.getItem(key).length + key.length;
+            }
+        }
+        const usedKB = Math.round(total / 1024);
+        const limitKB = 5000;
+        const usagePercent = Math.round((usedKB / limitKB) * 100);
+        console.log('存储使用:', usedKB + 'KB / ' + limitKB + 'KB (' + usagePercent + '%)');
+        if (usagePercent > 80) {
+            console.warn('存储空间已使用' + usagePercent + '%，请注意清理');
+        }
+        return { usedKB, limitKB, usagePercent };
+    } catch (e) {
+        return { usedKB: 0, limitKB: 5000, usagePercent: 0 };
+    }
+}
+
+function verifyDataIntegrity() {
+    const users = Store.get(STORAGE_KEYS.USERS, []);
+    const routes = Store.get(STORAGE_KEYS.ROUTES, []);
+    const appts = Store.get(STORAGE_KEYS.APPOINTMENTS, []);
+    const photos = Store.get(STORAGE_KEYS.PHOTOS, []);
+    const messages = Store.get(STORAGE_KEYS.MESSAGES, []);
+    console.log('数据完整性检查 - 用户:', users.length, '路线:', routes.length, '预约:', appts.length, '照片:', photos.length, '消息:', messages.length);
+    return { users, routes, appts, photos, messages };
 }
 
 // ============================================
 // 初始化
 // ============================================
 function initApp() {
+    console.log('=== 畅行地图 v' + APP_VERSION + ' 初始化 ===');
+
+    const repaired = Store.checkAndRepair();
+    if (repaired > 0) {
+        console.warn('检测并修复了', repaired, '个损坏的数据项');
+    }
+
     const savedVersion = Store.get(STORAGE_KEYS.VERSION, '');
     if (savedVersion !== APP_VERSION) {
-        console.log('版本更新，更新数据结构...', savedVersion, '->', APP_VERSION);
-        const users = Store.get(STORAGE_KEYS.USERS, []);
-        const currentUser = Store.get(STORAGE_KEYS.CURRENT_USER);
-        
-        Store.remove(STORAGE_KEYS.ROUTES);
-        Store.remove(STORAGE_KEYS.APPOINTMENTS);
-        Store.remove(STORAGE_KEYS.PHOTOS);
-        Store.remove(STORAGE_KEYS.MESSAGES);
-        
-        if (users.length > 0) {
-            Store.set(STORAGE_KEYS.USERS, users);
-        }
-        if (currentUser) {
-            Store.set(STORAGE_KEYS.CURRENT_USER, currentUser);
-        }
+        console.log('版本更新:', savedVersion || '(无版本)', '->', APP_VERSION);
+        migrateData(savedVersion, APP_VERSION);
         Store.set(STORAGE_KEYS.VERSION, APP_VERSION);
     }
+
+    verifyDataIntegrity();
+    checkStorageQuota();
 
     Auth.init();
     RouteService.initDemoData();

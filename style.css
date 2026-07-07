@@ -1014,6 +1014,41 @@ input, select, textarea {
     color: var(--danger);
 }
 
+.storage-info {
+    padding: 16px 20px;
+    background: #f8f9fa;
+    margin: 10px 16px;
+    border-radius: 12px;
+}
+
+.storage-label {
+    font-size: 13px;
+    color: #666;
+    margin-bottom: 8px;
+}
+
+.storage-bar {
+    height: 8px;
+    background: #e9ecef;
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 6px;
+}
+
+.storage-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--primary), var(--secondary));
+    border-radius: 4px;
+    width: 0%;
+    transition: width 0.3s;
+}
+
+.storage-text {
+    font-size: 12px;
+    color: #999;
+    text-align: right;
+}
+
 .modal {
     position: fixed;
     top: 0;
