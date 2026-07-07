@@ -12,7 +12,7 @@ const STORAGE_KEYS = {
     VERSION: 'changxing_version',
 };
 
-const APP_VERSION = '2.0'; // 新功能版本，更新后自动清除旧数据重新初始化
+const APP_VERSION = '2.1'; // 新功能版本，更新后自动清除旧数据重新初始化
 
 const DISABILITY_TYPES = {
     'limb-mild': { name: '肢体残疾（轻度）', tag: 'tag-limb-mild' },
