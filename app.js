@@ -8,12 +8,13 @@ const STORAGE_KEYS = {
     ROUTES: 'changxing_routes',
     APPOINTMENTS: 'changxing_appointments',
     PHOTOS: 'changxing_photos',
+    PHOTOS_INDEX: 'changxing_photos_index',
     MESSAGES: 'changxing_messages',
     VERSION: 'changxing_version',
     BACKUP_PREFIX: 'changxing_backup_',
 };
 
-const BACKUP_KEYS = ['USERS', 'ROUTES', 'APPOINTMENTS', 'PHOTOS', 'MESSAGES', 'CURRENT_USER'];
+const BACKUP_KEYS = ['USERS', 'ROUTES', 'APPOINTMENTS', 'PHOTOS_INDEX', 'MESSAGES', 'CURRENT_USER'];
 
 const APP_VERSION = '2.2';
 
@@ -141,6 +142,118 @@ const Store = {
             console.log('修复了', repaired, '个损坏的数据项');
         }
         return repaired;
+    }
+};
+
+// ============================================
+// IndexedDB 服务 - 用于存储照片（更大容量）
+// ============================================
+const PhotoDB = {
+    dbName: 'ChangxingPhotos',
+    dbVersion: 1,
+    storeName: 'photos',
+    db: null,
+
+    async init() {
+        return new Promise((resolve, reject) => {
+            const request = indexedDB.open(this.dbName, this.dbVersion);
+            
+            request.onerror = () => {
+                console.warn('IndexedDB 打开失败，将使用 localStorage');
+                reject(request.error);
+            };
+
+            request.onsuccess = (event) => {
+                this.db = event.target.result;
+                console.log('IndexedDB 初始化成功');
+                resolve(this.db);
+            };
+
+            request.onupgradeneeded = (event) => {
+                const db = event.target.result;
+                if (!db.objectStoreNames.contains(this.storeName)) {
+                    const store = db.createObjectStore(this.storeName, { keyPath: 'id' });
+                    store.createIndex('userId', 'userId', { unique: false });
+                    store.createIndex('createdAt', 'createdAt', { unique: false });
+                }
+            };
+        });
+    },
+
+    async add(photoId, imageData) {
+        return new Promise((resolve, reject) => {
+            if (!this.db) {
+                reject(new Error('IndexedDB 未初始化'));
+                return;
+            }
+            
+            const transaction = this.db.transaction([this.storeName], 'readwrite');
+            const store = transaction.objectStore(this.storeName);
+            const request = store.put({ id: photoId, imageData, createdAt: Date.now() });
+
+            request.onsuccess = () => resolve(true);
+            request.onerror = () => reject(request.error);
+        });
+    },
+
+    async get(photoId) {
+        return new Promise((resolve, reject) => {
+            if (!this.db) {
+                reject(new Error('IndexedDB 未初始化'));
+                return;
+            }
+            
+            const transaction = this.db.transaction([this.storeName], 'readonly');
+            const store = transaction.objectStore(this.storeName);
+            const request = store.get(photoId);
+
+            request.onsuccess = (event) => {
+                const result = event.target.result;
+                resolve(result ? result.imageData : null);
+            };
+            request.onerror = () => reject(request.error);
+        });
+    },
+
+    async delete(photoId) {
+        return new Promise((resolve, reject) => {
+            if (!this.db) {
+                reject(new Error('IndexedDB 未初始化'));
+                return;
+            }
+            
+            const transaction = this.db.transaction([this.storeName], 'readwrite');
+            const store = transaction.objectStore(this.storeName);
+            const request = store.delete(photoId);
+
+            request.onsuccess = () => resolve(true);
+            request.onerror = () => reject(request.error);
+        });
+    },
+
+    async getStats() {
+        return new Promise((resolve) => {
+            if (!this.db) {
+                resolve({ count: 0, size: 0 });
+                return;
+            }
+            
+            try {
+                const transaction = this.db.transaction([this.storeName], 'readonly');
+                const store = transaction.objectStore(this.storeName);
+                const request = store.getAll();
+                
+                request.onsuccess = (event) => {
+                    const photos = event.target.result;
+                    const count = photos.length;
+                    const size = photos.reduce((sum, p) => sum + (p.imageData?.length || 0), 0);
+                    resolve({ count, size: Math.round(size / 1024) });
+                };
+                request.onerror = () => resolve({ count: 0, size: 0 });
+            } catch (e) {
+                resolve({ count: 0, size: 0 });
+            }
+        });
     }
 };
 
@@ -627,7 +740,7 @@ const MessageService = {
 // ============================================
 const PhotoService = {
     initDemoData() {
-        const photos = Store.get(STORAGE_KEYS.PHOTOS, []);
+        const photos = Store.get(STORAGE_KEYS.PHOTOS_INDEX, []);
         if (photos.length > 0) return;
 
         const demoPhotos = [
@@ -638,42 +751,77 @@ const PhotoService = {
             { id: 'p5', userId: 'u2', userName: '大志', userAvatar: '🤝', imageUrl: 'https://picsum.photos/seed/changxing5/400/400', caption: '周末志愿者活动，大家都很棒！', createdAt: Date.now() - 3600000 * 12 },
             { id: 'p6', userId: 'u3', userName: '红红', userAvatar: '👩‍🦯', imageUrl: 'https://picsum.photos/seed/changxing6/400/400', caption: '咖啡店的无障碍通道好评 ☕', createdAt: Date.now() - 3600000 * 6 },
         ];
-        Store.set(STORAGE_KEYS.PHOTOS, demoPhotos);
+        Store.set(STORAGE_KEYS.PHOTOS_INDEX, demoPhotos);
     },
 
     getAll() {
-        return Store.get(STORAGE_KEYS.PHOTOS, []).sort((a, b) => b.createdAt - a.createdAt);
+        return Store.get(STORAGE_KEYS.PHOTOS_INDEX, []).sort((a, b) => b.createdAt - a.createdAt);
     },
 
     getByUserId(userId) {
         return this.getAll().filter(p => p.userId === userId);
     },
 
-    add(photoData) {
-        const photos = Store.get(STORAGE_KEYS.PHOTOS, []);
+    async add(photoData) {
+        const photos = Store.get(STORAGE_KEYS.PHOTOS_INDEX, []);
         const user = Auth.getUser();
         const newPhoto = {
             id: 'p' + Date.now(),
             userId: user.id,
             userName: user.nickname,
             userAvatar: user.avatar,
-            ...photoData,
+            caption: photoData.caption || '',
             createdAt: Date.now()
         };
-        photos.unshift(newPhoto);
-        try {
-            Store.set(STORAGE_KEYS.PHOTOS, photos);
-        } catch (e) {
-            console.error('照片存储失败，可能是存储空间不足:', e);
-            throw new Error('存储空间不足，请删除一些旧照片后重试');
+
+        if (photoData.imageUrl && photoData.imageUrl.startsWith('data:')) {
+            try {
+                await PhotoDB.add(newPhoto.id, photoData.imageUrl);
+                newPhoto.isLocal = true;
+            } catch (e) {
+                console.warn('IndexedDB 存储失败，回退到 localStorage:', e);
+                newPhoto.imageUrl = photoData.imageUrl;
+            }
+        } else {
+            newPhoto.imageUrl = photoData.imageUrl || '';
         }
+
+        photos.unshift(newPhoto);
+        Store.set(STORAGE_KEYS.PHOTOS_INDEX, photos);
         return newPhoto;
     },
 
-    delete(photoId) {
-        const photos = Store.get(STORAGE_KEYS.PHOTOS, []);
+    async getImage(photoId) {
+        const photos = Store.get(STORAGE_KEYS.PHOTOS_INDEX, []);
+        const photo = photos.find(p => p.id === photoId);
+        if (!photo) return null;
+        
+        if (photo.imageUrl && !photo.imageUrl.startsWith('data:')) {
+            return photo.imageUrl;
+        }
+        
+        if (photo.isLocal) {
+            try {
+                return await PhotoDB.get(photoId);
+            } catch (e) {
+                console.warn('从 IndexedDB 获取图片失败:', e);
+                return null;
+            }
+        }
+        
+        return photo.imageUrl || null;
+    },
+
+    async delete(photoId) {
+        try {
+            await PhotoDB.delete(photoId);
+        } catch (e) {
+            console.warn('从 IndexedDB 删除图片失败:', e);
+        }
+        
+        const photos = Store.get(STORAGE_KEYS.PHOTOS_INDEX, []);
         const filtered = photos.filter(p => p.id !== photoId);
-        Store.set(STORAGE_KEYS.PHOTOS, filtered);
+        Store.set(STORAGE_KEYS.PHOTOS_INDEX, filtered);
     }
 };
 
@@ -1024,7 +1172,7 @@ function showPage(pageId) {
 
     const headerTitle = {
         'login': '畅行地图',
-        'map': '无障碍地图',
+        'map': '畅行地图',
         'appointment': '出行搭子',
         'photos': '出行瞬间',
         'profile': '个人中心'
@@ -2203,7 +2351,7 @@ function showCreateApptModal() {
 // ============================================
 // 照片墙渲染
 // ============================================
-function renderPhotos() {
+async function renderPhotos() {
     const photos = PhotoService.getAll();
     const container = document.getElementById('photoWall');
 
@@ -2219,7 +2367,10 @@ function renderPhotos() {
 
     container.innerHTML = photos.map(photo => `
         <div class="photo-item" data-photo-id="${photo.id}">
-            <img src="${photo.imageUrl}" alt="出行照片" loading="lazy">
+            <div class="photo-loading">
+                <div class="spinner"></div>
+            </div>
+            <img src="" alt="出行照片" loading="lazy" style="display:none;">
             <div class="photo-info">
                 <div class="photo-author">
                     <span>${photo.userAvatar}</span>
@@ -2229,17 +2380,45 @@ function renderPhotos() {
         </div>
     `).join('');
 
-    container.querySelectorAll('.photo-item').forEach(item => {
+    container.querySelectorAll('.photo-item').forEach(async (item) => {
+        const photoId = item.dataset.photoId;
+        const img = item.querySelector('img');
+        const loading = item.querySelector('.photo-loading');
+        
+        try {
+            const imageUrl = await PhotoService.getImage(photoId);
+            if (imageUrl) {
+                img.src = imageUrl;
+                img.onload = () => {
+                    loading.style.display = 'none';
+                    img.style.display = 'block';
+                };
+            } else {
+                loading.innerHTML = '<span style="color:#999;font-size:12px;">图片加载失败</span>';
+            }
+        } catch (e) {
+            loading.innerHTML = '<span style="color:#999;font-size:12px;">图片加载失败</span>';
+        }
+
         item.addEventListener('click', () => {
-            const photo = photos.find(p => p.id === item.dataset.photoId);
+            const photo = photos.find(p => p.id === photoId);
             if (photo) showPhotoDetail(photo);
         });
     });
 }
 
-function showPhotoDetail(photo) {
+async function showPhotoDetail(photo) {
     const user = Auth.getUser();
     const isOwner = user && user.id === photo.userId;
+    
+    let imageUrl = photo.imageUrl;
+    if (photo.isLocal) {
+        try {
+            imageUrl = await PhotoService.getImage(photo.id);
+        } catch (e) {
+            console.warn('获取图片详情失败:', e);
+        }
+    }
     
     const content = `
         <div style="margin-bottom:12px;">
@@ -2255,7 +2434,7 @@ function showPhotoDetail(photo) {
             </div>
         </div>
         <div style="border-radius:var(--radius);overflow:hidden;margin-bottom:12px;">
-            <img src="${photo.imageUrl}" style="width:100%;display:block;">
+            <img src="${imageUrl || ''}" style="width:100%;display:block;">
         </div>
         <p style="font-size:14px;line-height:1.6;">${photo.caption || ''}</p>
     `;
@@ -2337,7 +2516,7 @@ function showUploadPhotoModal() {
 
         try {
             const compressedDataUrl = await compressImage(file);
-            PhotoService.add({
+            await PhotoService.add({
                 imageUrl: compressedDataUrl,
                 caption: caption
             });
@@ -2428,7 +2607,7 @@ function showAvatarUploadModal() {
     });
 }
 
-function updateProfileStats() {
+async function updateProfileStats() {
     const user = Auth.getUser();
     if (!user) return;
 
@@ -2440,7 +2619,7 @@ function updateProfileStats() {
     document.getElementById('myApptCount').textContent = myAppts.length;
     document.getElementById('myPhotoCount').textContent = myPhotos.length;
 
-    const quota = checkStorageQuota();
+    const quota = await checkStorageQuota();
     const fillEl = document.getElementById('storageFill');
     const textEl = document.getElementById('storageText');
     if (fillEl && textEl) {
@@ -2450,7 +2629,13 @@ function updateProfileStats() {
         } else {
             fillEl.style.background = '';
         }
-        textEl.textContent = quota.usedKB + 'KB / ' + (quota.limitKB / 1000) + 'MB (' + quota.usagePercent + '%)';
+        
+        let storageText = quota.usedKB + 'KB / 5MB';
+        if (quota.photoStats && quota.photoStats.size > 0) {
+            storageText += ' + 照片 ' + quota.photoStats.size + 'KB';
+        }
+        storageText += ' (' + quota.usagePercent + '%)';
+        textEl.textContent = storageText;
     }
 }
 
@@ -2492,7 +2677,7 @@ function migrateData(oldVersion, newVersion) {
     }
 }
 
-function checkStorageQuota() {
+async function checkStorageQuota() {
     try {
         let total = 0;
         for (let key in localStorage) {
@@ -2503,13 +2688,16 @@ function checkStorageQuota() {
         const usedKB = Math.round(total / 1024);
         const limitKB = 5000;
         const usagePercent = Math.round((usedKB / limitKB) * 100);
-        console.log('存储使用:', usedKB + 'KB / ' + limitKB + 'KB (' + usagePercent + '%)');
+
+        const photoStats = await PhotoDB.getStats();
+        
+        console.log('存储使用 - localStorage:', usedKB + 'KB / ' + limitKB + 'KB (' + usagePercent + '%), IndexedDB照片:', photoStats.size + 'KB');
         if (usagePercent > 80) {
-            console.warn('存储空间已使用' + usagePercent + '%，请注意清理');
+            console.warn('localStorage空间已使用' + usagePercent + '%，请注意清理');
         }
-        return { usedKB, limitKB, usagePercent };
+        return { usedKB, limitKB, usagePercent, photoStats };
     } catch (e) {
-        return { usedKB: 0, limitKB: 5000, usagePercent: 0 };
+        return { usedKB: 0, limitKB: 5000, usagePercent: 0, photoStats: { count: 0, size: 0 } };
     }
 }
 
@@ -2526,8 +2714,10 @@ function verifyDataIntegrity() {
 // ============================================
 // 初始化
 // ============================================
-function initApp() {
+async function initApp() {
     console.log('=== 畅行地图 v' + APP_VERSION + ' 初始化 ===');
+
+    PhotoDB.init().catch(e => console.warn('IndexedDB 不可用:', e));
 
     const repaired = Store.checkAndRepair();
     if (repaired > 0) {
@@ -2542,7 +2732,7 @@ function initApp() {
     }
 
     verifyDataIntegrity();
-    checkStorageQuota();
+    await checkStorageQuota();
 
     Auth.init();
     RouteService.initDemoData();
