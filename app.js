@@ -16,7 +16,7 @@ const STORAGE_KEYS = {
 
 const BACKUP_KEYS = ['USERS', 'ROUTES', 'APPOINTMENTS', 'PHOTOS_INDEX', 'MESSAGES', 'CURRENT_USER'];
 
-const APP_VERSION = '2.2';
+const APP_VERSION = '2.3';
 
 const DISABILITY_TYPES = {
     'limb-mild': { name: '肢体残疾（轻度）', tag: 'tag-limb-mild' },
@@ -749,16 +749,19 @@ const PhotoService = {
         
         if (rawPhotos || rawPhotosOld || hasBackup) {
             console.warn('照片数据可能损坏，尝试恢复...');
-            if (rawPhotosOld && photos.length === 0) {
-                Store.set(STORAGE_KEYS.PHOTOS_INDEX, Store.get(STORAGE_KEYS.PHOTOS, []));
-                console.log('已从旧PHOTOS恢复照片数据');
-                return;
-            }
             if (hasBackup) {
                 Store.restoreFromBackup(STORAGE_KEYS.PHOTOS_INDEX);
                 const restored = Store.get(STORAGE_KEYS.PHOTOS_INDEX, []);
                 if (restored.length > 0) {
                     console.log('已从备份恢复照片数据:', restored.length);
+                    return;
+                }
+            }
+            if (rawPhotosOld) {
+                const oldPhotos = Store.get(STORAGE_KEYS.PHOTOS, []);
+                if (oldPhotos.length > 0) {
+                    Store.set(STORAGE_KEYS.PHOTOS_INDEX, oldPhotos);
+                    console.log('已从旧PHOTOS迁移照片数据:', oldPhotos.length);
                     return;
                 }
             }
@@ -1157,6 +1160,44 @@ function showToast(message, duration = 2000) {
     setTimeout(() => toast.classList.add('hidden'), duration);
 }
 
+function showErrorFallback(containerId, error) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    console.error('渲染错误:', containerId, error);
+    container.innerHTML = `
+        <div style="padding:40px 20px;text-align:center;color:#666;">
+            <div style="font-size:48px;margin-bottom:16px;">⚠️</div>
+            <div style="font-size:16px;font-weight:500;margin-bottom:8px;">页面加载出错了</div>
+            <div style="font-size:13px;color:#999;margin-bottom:16px;">请尝试刷新页面</div>
+            <button onclick="location.reload();" style="padding:10px 24px;background:#2ecc71;color:white;border:none;border-radius:8px;cursor:pointer;font-size:14px;">刷新页面</button>
+        </div>
+    `;
+}
+
+function safeRender(containerId, renderFn) {
+    try {
+        renderFn();
+    } catch (e) {
+        showErrorFallback(containerId, e);
+    }
+}
+
+function initGlobalErrorHandler() {
+    window.addEventListener('error', (event) => {
+        console.error('全局错误:', event.error || event.message);
+        if (typeof showToast === 'function') {
+            showToast('页面出现错误，请刷新重试', 3000);
+        }
+    });
+
+    window.addEventListener('unhandledrejection', (event) => {
+        console.error('未处理的Promise拒绝:', event.reason);
+        if (typeof showToast === 'function') {
+            showToast('操作出现异常，请重试', 3000);
+        }
+    });
+}
+
 function showModal(title, contentHtml) {
     document.getElementById('modalTitle').textContent = title;
     document.getElementById('modalBody').innerHTML = contentHtml;
@@ -1322,43 +1363,45 @@ function initAuthUI() {
 // 路线列表渲染
 // ============================================
 function renderRouteList() {
-    const routes = RouteService.getAll();
-    const container = document.getElementById('routeListContainer');
+    safeRender('routeListContainer', () => {
+        const routes = RouteService.getAll();
+        const container = document.getElementById('routeListContainer');
 
-    if (routes.length === 0) {
-        container.innerHTML = `
-            <div class="empty-state">
-                <div class="empty-state-icon">🗺️</div>
-                <div class="empty-state-text">还没有路线，快来上传第一条吧！</div>
-            </div>
-        `;
-        return;
-    }
-
-    container.innerHTML = routes.map(route => {
-        const diffText = { easy: '轻松', medium: '适中', hard: '挑战' }[route.difficulty] || '适中';
-        return `
-            <div class="route-card" data-route-id="${route.id}">
-                <div class="route-card-header">
-                    <div class="route-card-title">${route.title}</div>
-                    <div class="route-card-tag">${diffText}</div>
+        if (routes.length === 0) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-state-icon">🗺️</div>
+                    <div class="empty-state-text">还没有路线，快来上传第一条吧！</div>
                 </div>
-                <div class="route-card-desc">${route.description}</div>
-                <div class="route-card-footer">
-                    <div class="route-author">
-                        <div class="route-author-avatar">${route.userAvatar}</div>
-                        <span>${route.userName}</span>
+            `;
+            return;
+        }
+
+        container.innerHTML = routes.map(route => {
+            const diffText = { easy: '轻松', medium: '适中', hard: '挑战' }[route.difficulty] || '适中';
+            return `
+                <div class="route-card" data-route-id="${route.id}">
+                    <div class="route-card-header">
+                        <div class="route-card-title">${route.title}</div>
+                        <div class="route-card-tag">${diffText}</div>
                     </div>
-                    <span>📍 ${route.distance}km · ${formatTime(route.createdAt)}</span>
+                    <div class="route-card-desc">${route.description}</div>
+                    <div class="route-card-footer">
+                        <div class="route-author">
+                            <div class="route-author-avatar">${route.userAvatar}</div>
+                            <span>${route.userName}</span>
+                        </div>
+                        <span>📍 ${route.distance}km · ${formatTime(route.createdAt)}</span>
+                    </div>
                 </div>
-            </div>
-        `;
-    }).join('');
+            `;
+        }).join('');
 
-    container.querySelectorAll('.route-card').forEach(card => {
-        card.addEventListener('click', () => {
-            const routeId = card.dataset.routeId;
-            showRouteDetail(routeId);
+        container.querySelectorAll('.route-card').forEach(card => {
+            card.addEventListener('click', () => {
+                const routeId = card.dataset.routeId;
+                showRouteDetail(routeId);
+            });
         });
     });
 }
@@ -1643,7 +1686,7 @@ function compressImage(file, maxWidth = 800, quality = 0.6) {
         const reader = new FileReader();
         reader.onload = function(e) {
             const img = new Image();
-            img.onload = function() {
+            const handleLoad = () => {
                 let width = img.width;
                 let height = img.height;
 
@@ -1660,8 +1703,12 @@ function compressImage(file, maxWidth = 800, quality = 0.6) {
 
                 resolve(canvas.toDataURL('image/jpeg', quality));
             };
+            img.onload = handleLoad;
             img.onerror = () => reject(new Error('图片加载失败'));
             img.src = e.target.result;
+            if (img.complete && img.naturalWidth > 0) {
+                handleLoad();
+            }
         };
         reader.onerror = () => reject(new Error('文件读取失败'));
         reader.readAsDataURL(file);
@@ -2054,103 +2101,105 @@ function attachAutocomplete(input) {
 let currentApptTab = 'all';
 
 function renderAppointments(tab = 'all') {
-    currentApptTab = tab;
-    document.querySelectorAll('.mini-tab').forEach(t => {
-        t.classList.toggle('active', t.dataset.apptTab === tab);
-    });
-
-    let appts = [];
-    if (tab === 'all') appts = AppointmentService.getAll();
-    else if (tab === 'mine') appts = AppointmentService.getMine();
-    else if (tab === 'volunteer') appts = AppointmentService.getVolunteerPosts();
-
-    const container = document.getElementById('appointmentList');
-
-    if (appts.length === 0) {
-        container.innerHTML = `
-            <div class="empty-state">
-                <div class="empty-state-icon">🤝</div>
-                <div class="empty-state-text">暂无预约记录</div>
-            </div>
-        `;
-        return;
-    }
-
-    const user = Auth.getUser();
-    container.innerHTML = appts.map(appt => {
-        const statusText = { pending: '待接单', accepted: '已接单', completed: '已完成' }[appt.status];
-        const statusClass = { pending: 'status-pending', accepted: 'status-accepted', completed: 'status-completed' }[appt.status];
-        const disType = DISABILITY_TYPES[appt.disabilityType];
-        const disabilityTag = disType ? `<span class="tag ${disType.tag}">${disType.name}</span>` : '';
-
-        let actionBtns = [];
-        if (appt.status === 'pending' && user.role === 'volunteer') {
-            actionBtns.push(`<button class="btn btn-primary btn-sm" data-accept="${appt.id}">我来接单</button>`);
-        }
-        const isParticipant = appt.volunteerId === user.id || appt.requesterId === user.id;
-        if (appt.status === 'accepted' && isParticipant) {
-            actionBtns.push(`<button class="btn btn-secondary btn-sm" data-chat="${appt.id}">💬 留言</button>`);
-            actionBtns.push(`<button class="btn btn-secondary btn-sm" data-complete="${appt.id}">标记完成</button>`);
-        }
-        if (appt.status === 'completed' && isParticipant) {
-            actionBtns.push(`<button class="btn btn-secondary btn-sm" data-chat="${appt.id}">💬 查看留言</button>`);
-        }
-
-        const actionBtnHtml = actionBtns.join('');
-
-        return `
-            <div class="appointment-card">
-                <div class="appointment-card-header">
-                    <div class="appointment-card-title">${appt.route}</div>
-                    <div class="appointment-status ${statusClass}">${statusText}</div>
-                </div>
-                <div class="appointment-info">
-                    <div class="appointment-info-item">
-                        <span>📅</span>
-                        <span>${appt.date} ${appt.time}</span>
-                    </div>
-                    <div class="appointment-info-item">
-                        <span>🧑</span>
-                        <span>发起人：${appt.requesterName}</span>
-                    </div>
-                    <div class="appointment-info-item">
-                        <span>${disabilityTag}</span>
-                    </div>
-                    ${appt.volunteerName ? `
-                    <div class="appointment-info-item">
-                        <span>🤝</span>
-                        <span>志愿者：${appt.volunteerName}</span>
-                    </div>` : ''}
-                    <div class="appointment-info-item" style="color:var(--text-muted);font-size:12px;">
-                        ${appt.needDescription}
-                    </div>
-                </div>
-                <div class="appointment-actions">
-                    ${actionBtnHtml}
-                </div>
-            </div>
-        `;
-    }).join('');
-
-    container.querySelectorAll('[data-accept]').forEach(btn => {
-        btn.addEventListener('click', () => {
-            AppointmentService.accept(btn.dataset.accept);
-            showToast('接单成功！');
-            renderAppointments(currentApptTab);
+    safeRender('appointmentList', () => {
+        currentApptTab = tab;
+        document.querySelectorAll('.mini-tab').forEach(t => {
+            t.classList.toggle('active', t.dataset.apptTab === tab);
         });
-    });
 
-    container.querySelectorAll('[data-complete]').forEach(btn => {
-        btn.addEventListener('click', () => {
-            AppointmentService.complete(btn.dataset.complete);
-            showToast('已标记为完成');
-            renderAppointments(currentApptTab);
+        let appts = [];
+        if (tab === 'all') appts = AppointmentService.getAll();
+        else if (tab === 'mine') appts = AppointmentService.getMine();
+        else if (tab === 'volunteer') appts = AppointmentService.getVolunteerPosts();
+
+        const container = document.getElementById('appointmentList');
+
+        if (appts.length === 0) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-state-icon">🤝</div>
+                    <div class="empty-state-text">暂无预约记录</div>
+                </div>
+            `;
+            return;
+        }
+
+        const user = Auth.getUser();
+        container.innerHTML = appts.map(appt => {
+            const statusText = { pending: '待接单', accepted: '已接单', completed: '已完成' }[appt.status];
+            const statusClass = { pending: 'status-pending', accepted: 'status-accepted', completed: 'status-completed' }[appt.status];
+            const disType = DISABILITY_TYPES[appt.disabilityType];
+            const disabilityTag = disType ? `<span class="tag ${disType.tag}">${disType.name}</span>` : '';
+
+            let actionBtns = [];
+            if (appt.status === 'pending' && user.role === 'volunteer') {
+                actionBtns.push(`<button class="btn btn-primary btn-sm" data-accept="${appt.id}">我来接单</button>`);
+            }
+            const isParticipant = appt.volunteerId === user.id || appt.requesterId === user.id;
+            if (appt.status === 'accepted' && isParticipant) {
+                actionBtns.push(`<button class="btn btn-secondary btn-sm" data-chat="${appt.id}">💬 留言</button>`);
+                actionBtns.push(`<button class="btn btn-secondary btn-sm" data-complete="${appt.id}">标记完成</button>`);
+            }
+            if (appt.status === 'completed' && isParticipant) {
+                actionBtns.push(`<button class="btn btn-secondary btn-sm" data-chat="${appt.id}">💬 查看留言</button>`);
+            }
+
+            const actionBtnHtml = actionBtns.join('');
+
+            return `
+                <div class="appointment-card">
+                    <div class="appointment-card-header">
+                        <div class="appointment-card-title">${appt.route}</div>
+                        <div class="appointment-status ${statusClass}">${statusText}</div>
+                    </div>
+                    <div class="appointment-info">
+                        <div class="appointment-info-item">
+                            <span>📅</span>
+                            <span>${appt.date} ${appt.time}</span>
+                        </div>
+                        <div class="appointment-info-item">
+                            <span>🧑</span>
+                            <span>发起人：${appt.requesterName}</span>
+                        </div>
+                        <div class="appointment-info-item">
+                            <span>${disabilityTag}</span>
+                        </div>
+                        ${appt.volunteerName ? `
+                        <div class="appointment-info-item">
+                            <span>🤝</span>
+                            <span>志愿者：${appt.volunteerName}</span>
+                        </div>` : ''}
+                        <div class="appointment-info-item" style="color:var(--text-muted);font-size:12px;">
+                            ${appt.needDescription}
+                        </div>
+                    </div>
+                    <div class="appointment-actions">
+                        ${actionBtnHtml}
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        container.querySelectorAll('[data-accept]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                AppointmentService.accept(btn.dataset.accept);
+                showToast('接单成功！');
+                renderAppointments(currentApptTab);
+            });
         });
-    });
 
-    container.querySelectorAll('[data-chat]').forEach(btn => {
-        btn.addEventListener('click', () => {
-            showChatModal(btn.dataset.chat);
+        container.querySelectorAll('[data-complete]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                AppointmentService.complete(btn.dataset.complete);
+                showToast('已标记为完成');
+                renderAppointments(currentApptTab);
+            });
+        });
+
+        container.querySelectorAll('[data-chat]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                showChatModal(btn.dataset.chat);
+            });
         });
     });
 }
@@ -2373,59 +2422,94 @@ function showCreateApptModal() {
 // 照片墙渲染
 // ============================================
 async function renderPhotos() {
-    const photos = PhotoService.getAll();
-    const container = document.getElementById('photoWall');
+    try {
+        const photos = PhotoService.getAll();
+        const container = document.getElementById('photoWall');
 
-    if (photos.length === 0) {
-        container.innerHTML = `
-            <div class="empty-state" style="grid-column: span 3;">
-                <div class="empty-state-icon">📷</div>
-                <div class="empty-state-text">还没有同行瞬间，快来分享吧！</div>
-            </div>
-        `;
-        return;
-    }
-
-    container.innerHTML = photos.map(photo => `
-        <div class="photo-item" data-photo-id="${photo.id}">
-            <div class="photo-loading">
-                <div class="spinner"></div>
-            </div>
-            <img src="" alt="出行照片" loading="lazy" style="display:none;">
-            <div class="photo-info">
-                <div class="photo-author">
-                    <span>${photo.userAvatar}</span>
-                    <span>${photo.userName}</span>
+        if (photos.length === 0) {
+            container.innerHTML = `
+                <div class="empty-state" style="grid-column: span 3;">
+                    <div class="empty-state-icon">📷</div>
+                    <div class="empty-state-text">还没有同行瞬间，快来分享吧！</div>
                 </div>
-            </div>
-        </div>
-    `).join('');
-
-    container.querySelectorAll('.photo-item').forEach(async (item) => {
-        const photoId = item.dataset.photoId;
-        const img = item.querySelector('img');
-        const loading = item.querySelector('.photo-loading');
-        
-        try {
-            const imageUrl = await PhotoService.getImage(photoId);
-            if (imageUrl) {
-                img.src = imageUrl;
-                img.onload = () => {
-                    loading.style.display = 'none';
-                    img.style.display = 'block';
-                };
-            } else {
-                loading.innerHTML = '<span style="color:#999;font-size:12px;">图片加载失败</span>';
-            }
-        } catch (e) {
-            loading.innerHTML = '<span style="color:#999;font-size:12px;">图片加载失败</span>';
+            `;
+            return;
         }
 
-        item.addEventListener('click', () => {
-            const photo = photos.find(p => p.id === photoId);
-            if (photo) showPhotoDetail(photo);
+        container.innerHTML = photos.map(photo => `
+            <div class="photo-item" data-photo-id="${photo.id}">
+                <div class="photo-loading">
+                    <div class="spinner"></div>
+                </div>
+                <img src="" alt="出行照片" loading="lazy" style="display:none;">
+                <div class="photo-info">
+                    <div class="photo-author">
+                        <span>${photo.userAvatar}</span>
+                        <span>${photo.userName}</span>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+
+        container.querySelectorAll('.photo-item').forEach(async (item) => {
+            const photoId = item.dataset.photoId;
+            const img = item.querySelector('img');
+            const loading = item.querySelector('.photo-loading');
+            
+            const showError = () => {
+                loading.innerHTML = '<span style="color:#999;font-size:12px;">图片加载失败</span>';
+            };
+
+            const handleLoad = () => {
+                loading.style.display = 'none';
+                img.style.display = 'block';
+            };
+
+            let loaded = false;
+            const timeout = setTimeout(() => {
+                if (!loaded) {
+                    showError();
+                }
+            }, 10000);
+
+            try {
+                const imageUrl = await PhotoService.getImage(photoId);
+                if (imageUrl) {
+                    img.onload = () => {
+                        loaded = true;
+                        clearTimeout(timeout);
+                        handleLoad();
+                    };
+                    img.onerror = () => {
+                        loaded = true;
+                        clearTimeout(timeout);
+                        showError();
+                    };
+                    img.src = imageUrl;
+                    if (img.complete && img.naturalWidth > 0) {
+                        loaded = true;
+                        clearTimeout(timeout);
+                        handleLoad();
+                    }
+                } else {
+                    loaded = true;
+                    clearTimeout(timeout);
+                    showError();
+                }
+            } catch (e) {
+                loaded = true;
+                clearTimeout(timeout);
+                showError();
+            }
+
+            item.addEventListener('click', () => {
+                const photo = photos.find(p => p.id === photoId);
+                if (photo) showPhotoDetail(photo);
+            });
         });
-    });
+    } catch (e) {
+        showErrorFallback('photoWall', e);
+    }
 }
 
 async function showPhotoDetail(photo) {
@@ -2560,16 +2644,18 @@ function renderProfile() {
     const user = Auth.getUser();
     if (!user) return;
 
-    const avatarEl = document.getElementById('profileAvatar');
-    if (user.avatar && user.avatar.startsWith && user.avatar.startsWith('data:image')) {
-        avatarEl.innerHTML = `<img src="${user.avatar}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`;
-    } else {
-        avatarEl.textContent = user.avatar;
-    }
-    document.getElementById('profileName').textContent = user.nickname;
-    document.getElementById('profileRole').textContent = ROLE_NAMES[user.role] || '用户';
+    safeRender('profilePage', () => {
+        const avatarEl = document.getElementById('profileAvatar');
+        if (user.avatar && user.avatar.startsWith && user.avatar.startsWith('data:image')) {
+            avatarEl.innerHTML = `<img src="${user.avatar}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`;
+        } else {
+            avatarEl.textContent = user.avatar;
+        }
+        document.getElementById('profileName').textContent = user.nickname;
+        document.getElementById('profileRole').textContent = ROLE_NAMES[user.role] || '用户';
 
-    updateProfileStats();
+        updateProfileStats();
+    });
 }
 
 function showAvatarUploadModal() {
@@ -2744,6 +2830,8 @@ function verifyDataIntegrity() {
 // 初始化
 // ============================================
 async function initApp() {
+    initGlobalErrorHandler();
+    
     console.log('=== 畅行地图 v' + APP_VERSION + ' 初始化 ===');
 
     PhotoDB.init().catch(e => console.warn('IndexedDB 不可用:', e));
@@ -2751,6 +2839,9 @@ async function initApp() {
     const repaired = Store.checkAndRepair();
     if (repaired > 0) {
         console.warn('检测并修复了', repaired, '个损坏的数据项');
+        if (typeof showToast === 'function') {
+            showToast('已自动恢复 ' + repaired + ' 项数据', 3000);
+        }
     }
 
     const savedVersion = Store.get(STORAGE_KEYS.VERSION, '');
@@ -2836,7 +2927,7 @@ async function initApp() {
                     让志愿者与残障伙伴结对同行，<br>
                     让每一次出行，都畅行无阻。
                 </p>
-                <p style="font-size:12px;color:var(--text-muted);">Version 1.0.0</p>
+                <p style="font-size:12px;color:var(--text-muted);">Version ${APP_VERSION}</p>
             </div>
         `);
     });
