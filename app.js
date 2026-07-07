@@ -743,6 +743,27 @@ const PhotoService = {
         const photos = Store.get(STORAGE_KEYS.PHOTOS_INDEX, []);
         if (photos.length > 0) return;
 
+        const rawPhotos = Store.getRaw(STORAGE_KEYS.PHOTOS_INDEX);
+        const rawPhotosOld = Store.getRaw(STORAGE_KEYS.PHOTOS);
+        const hasBackup = Store.getBackup(STORAGE_KEYS.PHOTOS_INDEX) !== null;
+        
+        if (rawPhotos || rawPhotosOld || hasBackup) {
+            console.warn('照片数据可能损坏，尝试恢复...');
+            if (rawPhotosOld && photos.length === 0) {
+                Store.set(STORAGE_KEYS.PHOTOS_INDEX, Store.get(STORAGE_KEYS.PHOTOS, []));
+                console.log('已从旧PHOTOS恢复照片数据');
+                return;
+            }
+            if (hasBackup) {
+                Store.restoreFromBackup(STORAGE_KEYS.PHOTOS_INDEX);
+                const restored = Store.get(STORAGE_KEYS.PHOTOS_INDEX, []);
+                if (restored.length > 0) {
+                    console.log('已从备份恢复照片数据:', restored.length);
+                    return;
+                }
+            }
+        }
+
         const demoPhotos = [
             { id: 'p1', userId: 'u1', userName: '小明', userAvatar: '🧑‍🦽', imageUrl: 'https://picsum.photos/seed/changxing1/400/400', caption: '外滩的日落真的太美了！感谢大志志愿者的陪伴 🌅', createdAt: Date.now() - 86400000 * 4 },
             { id: 'p2', userId: 'u2', userName: '大志', userAvatar: '🤝', imageUrl: 'https://picsum.photos/seed/changxing2/400/400', caption: '和小红一起逛了静安公园，她笑得好开心 😊', createdAt: Date.now() - 86400000 * 3 },
@@ -2648,11 +2669,12 @@ function migrateData(oldVersion, newVersion) {
         const users = Store.get(STORAGE_KEYS.USERS, []);
         const routes = Store.get(STORAGE_KEYS.ROUTES, []);
         const appts = Store.get(STORAGE_KEYS.APPOINTMENTS, []);
-        const photos = Store.get(STORAGE_KEYS.PHOTOS, []);
+        const photosIndex = Store.get(STORAGE_KEYS.PHOTOS_INDEX, []);
+        const photosOld = Store.get(STORAGE_KEYS.PHOTOS, []);
         const messages = Store.get(STORAGE_KEYS.MESSAGES, []);
         const currentUser = Store.get(STORAGE_KEYS.CURRENT_USER);
 
-        console.log('迁移前数据统计 - 用户:', users.length, '路线:', routes.length, '预约:', appts.length, '照片:', photos.length, '消息:', messages.length);
+        console.log('迁移前数据统计 - 用户:', users.length, '路线:', routes.length, '预约:', appts.length, '照片索引:', photosIndex.length, '旧照片:', photosOld.length, '消息:', messages.length);
 
         BACKUP_KEYS.forEach(keyName => {
             const key = STORAGE_KEYS[keyName];
@@ -2662,7 +2684,14 @@ function migrateData(oldVersion, newVersion) {
         if (users.length > 0) Store.set(STORAGE_KEYS.USERS, users);
         if (routes.length > 0) Store.set(STORAGE_KEYS.ROUTES, routes);
         if (appts.length > 0) Store.set(STORAGE_KEYS.APPOINTMENTS, appts);
-        if (photos.length > 0) Store.set(STORAGE_KEYS.PHOTOS, photos);
+        
+        if (photosOld.length > 0 && photosIndex.length === 0) {
+            Store.set(STORAGE_KEYS.PHOTOS_INDEX, photosOld);
+            console.log('已从旧PHOTOS迁移到PHOTOS_INDEX:', photosOld.length);
+        } else if (photosIndex.length > 0) {
+            Store.set(STORAGE_KEYS.PHOTOS_INDEX, photosIndex);
+        }
+        
         if (messages.length > 0) Store.set(STORAGE_KEYS.MESSAGES, messages);
         if (currentUser) Store.set(STORAGE_KEYS.CURRENT_USER, currentUser);
 
@@ -2705,7 +2734,7 @@ function verifyDataIntegrity() {
     const users = Store.get(STORAGE_KEYS.USERS, []);
     const routes = Store.get(STORAGE_KEYS.ROUTES, []);
     const appts = Store.get(STORAGE_KEYS.APPOINTMENTS, []);
-    const photos = Store.get(STORAGE_KEYS.PHOTOS, []);
+    const photos = Store.get(STORAGE_KEYS.PHOTOS_INDEX, []);
     const messages = Store.get(STORAGE_KEYS.MESSAGES, []);
     console.log('数据完整性检查 - 用户:', users.length, '路线:', routes.length, '预约:', appts.length, '照片:', photos.length, '消息:', messages.length);
     return { users, routes, appts, photos, messages };
